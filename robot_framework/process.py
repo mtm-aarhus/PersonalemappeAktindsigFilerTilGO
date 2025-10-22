@@ -35,6 +35,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     SagsbehandlerMail = specific_content.get('SagsbehandlerEmail')
     PersonaleSagsTitel= specific_content.get('PersonaleSagsTitel')
     Udleveringsmappelink = specific_content.get('Udleveringsmappelink')
+    orchestrator_connection.log_info(f'Variable {SagsID}, {PersonaleSagsTitel}')
 
     if Udleveringsmappelink:
         UdleveringsSagsID = Udleveringsmappelink.rsplit("/")[-1]
@@ -45,6 +46,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     orchestrator_connection.log_info('Defininf sharepoint stuff')
 
     relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/Delte dokumenter/Dokumentlister/{PersonaleSagsTitel} - Personaleaktindsigtsanmodning'
+
     downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
     today_date = datetime.now().strftime("%d-%m-%Y")
 
