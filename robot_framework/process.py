@@ -28,6 +28,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     go_password_test = go_test_login.password
 
     specific_content = json.loads(queue_element.data)
+    orchestrator_connection.log_info('Got constants')
 
     #Definer variable
     SagsID = specific_content.get('caseid')
@@ -41,6 +42,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
         # delete_case_go(gotesturl, UdleveringsSagsID, session)
         # orchestrator_connection.log_info(f'Gammel delingsmappe slettet for sag {UdleveringsSagsID}')
     #1 - definer sharepointsite url og mapper
+    orchestrator_connection.log_info('Defininf sharepoint stuff')
 
     relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/Delte dokumenter/Dokumentlister/{PersonaleSagsTitel} - Personaleaktindsigtsanmodning'
     downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
@@ -60,6 +62,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     #og upload filerne hvis der er nogen
     if res:
         for file in res:
+            orchestrator_connection.log_info('Processing new file')
             FilEndelse = file[2].rsplit('.')[-1]
             file_path = f'{downloads_folder}\{file[0]}.{FilEndelse}'
             AktID = file[3]
@@ -80,8 +83,9 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
                         "Dato": today_date,
                         "CCMMustBeOnPostList": "0"
                     }
-        
+        orchestrator_connection.log_info('Making payload doc')
         payload = make_payload_document(ows_dict= ows_dict, caseID = CaseID, FolderPath= "", byte_arr= byte_arr, filename = filename )
+        orchestrator_connection.log_info('uploading docs')
 
         upload_document_go(gotesturl, payload = payload, session = session)
         delete_local_file(filsti = file_path)
@@ -92,10 +96,10 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
         "in_DokumentlisteDatoString": today_date,
         "in_GoUsername": go_username_test,
         "in_GoPassword": go_password_test}
-
+        orchestrator_connection.log_info('Makinf aktliste')
         invoke_GenerateAndUploadAktlistePDF(args, orchestrator_connection= orchestrator_connection, session = session, gourl = gotesturl)
         send_succes_email(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, Url = CaseUrl, orchestrator_connection = orchestrator_connection)
-        
+        orchestrator_connection.log_info('Logging info to database')
         SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
         DATABASE_NAME = "AktindsigterPersonalemapper"
 
