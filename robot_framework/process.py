@@ -13,7 +13,6 @@ from urllib.parse import quote_plus
 def process(orchestrator_connection: OrchestratorConnection, queue_element: QueueElement | None = None) -> None:
     specific_content = json.loads(queue_element.data)
 
-    orchestrator_connection = OrchestratorConnection("OverførFilerTilGo", os.getenv('OpenOrchestratorSQL'),os.getenv('OpenOrchestratorKey'), None)
     SharepointSiteUrl = orchestrator_connection.get_constant("AktindsigtPersonalemapperSharepointURL").value
     gotesturl = orchestrator_connection.get_constant('GOApiTESTURL').value
     go_api_url = orchestrator_connection.get_constant("GOApiURL").value
@@ -35,6 +34,10 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     SagsbehandlerMail = specific_content.get('SagsbehandlerEmail')
     PersonaleSagsTitel= specific_content.get('PersonaleSagsTitel')
     Udleveringsmappelink = specific_content.get('Udleveringsmappelink')
+    dokumentlisteovermappe = specific_content.get("dokumentlisteovermappe")
+    if not dokumentlisteovermappe:
+        dokumentlisteovermappe = 
+
     orchestrator_connection.log_info(f'Variable {SagsID}, {PersonaleSagsTitel}')
 
     if Udleveringsmappelink:
@@ -45,7 +48,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     #1 - definer sharepointsite url og mapper
     orchestrator_connection.log_info('Defininf sharepoint stuff')
 
-    relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/Delte dokumenter/Dokumentlister/{PersonaleSagsTitel} - Personaleaktindsigtsanmodning'
+    relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/Delte dokumenter/Dokumentlister/{dokumentlisteovermappe}'
 
     downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
     today_date = datetime.now().strftime("%d-%m-%Y")
