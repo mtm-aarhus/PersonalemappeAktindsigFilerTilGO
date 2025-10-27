@@ -39,16 +39,17 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     orchestrator_connection.log_info(f'Variable {SagsID}, {PersonaleSagsTitel}')
 
     if Udleveringsmappelink:
+        #hvis der allerede ligger en udleveringsmappe skal den slettes for ikke at have dobbeltmapper til at ligge
         UdleveringsSagsID = Udleveringsmappelink.rsplit("/")[-1]
         orchestrator_connection.log_info(f'Gammel udleveringsmappe detekteret {UdleveringsSagsID} {Udleveringsmappelink}')
         # delete_case_go(gotesturl, UdleveringsSagsID, session)
         # orchestrator_connection.log_info(f'Gammel delingsmappe slettet for sag {UdleveringsSagsID}')
     #1 - definer sharepointsite url og mapper
-    orchestrator_connection.log_info('Defininf sharepoint stuff')
+    orchestrator_connection.log_info('Defining sharepoint stuff')
 
     encoded_folder = quote(dokumentlisteovermappe)
     encoded_library = quote("Delte dokumenter")
-    relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/{encoded_library}/Dokumentlister/{encoded_folder}'
+    relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/{"Delte dokumenter"}/Dokumentlister/{encoded_folder}'
 
     downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
     today_date = datetime.now().strftime("%d-%m-%Y")
