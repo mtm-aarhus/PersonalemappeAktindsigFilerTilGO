@@ -55,8 +55,10 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
 
     #2 - Hent dokumenttitlerne der er ja eller delvis i i dokumentlisterne og download filerne, hvis der er nogen
     res, aktliste_data = hent_dokumenttitler_nyeste_filer(SharepointSiteUrl, relative_url, username, password, orchestrator_connection= orchestrator_connection)
+    orchestrator_connection.log_info('Dokumentliste tjekket')
 
     #3 - Opret en sag
+    orchestrator_connection.log_info('Opretter sag')
     session = create_session(go_username_test, go_password_test)
     CreatedCase = json.loads(create_case(gotesturl, PersonaleSagsTitel, SagsID, session))
     
@@ -65,6 +67,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     CaseID = CreatedCase['CaseID']
     
     #og upload filerne hvis der er nogen
+    orchestrator_connection.log_info('Uploader filer')
     if res:
         for file in res:
             orchestrator_connection.log_info('Processing new file')
