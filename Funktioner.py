@@ -46,12 +46,12 @@ def upload_document_go(go_api_url, payload, session):
     return response.json()
 
 
-def delete_case_go(go_api_url, payload, session):
+def delete_case_go(go_api_url, session, sagsnummer):
     '''
     Deletes case in go
     '''
-    url = f"{go_api_url}/_goapi/Cases/"
-    response = session.delete(url, data=payload, timeout=1200)
+    url = f"{go_api_url}/geosager/_goapi/Cases/{sagsnummer}"
+    response = session.delete(url, data= {"Data": ""}, timeout=1200)
     response.raise_for_status()
     return response.json()
 
