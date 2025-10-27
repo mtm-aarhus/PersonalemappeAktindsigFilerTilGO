@@ -47,9 +47,8 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     #1 - definer sharepointsite url og mapper
     orchestrator_connection.log_info('Defining sharepoint stuff')
 
-    encoded_folder = quote(dokumentlisteovermappe)
-    encoded_library = quote("Delte dokumenter")
-    relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/Delte dokumenter/Dokumentlister/{encoded_folder}'
+    relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/Delte dokumenter/Dokumentlister/{dokumentlisteovermappe}'
+    print(relative_url)
 
     downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
     today_date = datetime.now().strftime("%d-%m-%Y")

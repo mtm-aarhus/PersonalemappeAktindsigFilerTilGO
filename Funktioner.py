@@ -247,9 +247,6 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                 # Tilføj kun rækken hvis mindst én værdi ikke er tom
                 if any(v not in [None, "", float('nan')] for v in row_dict.values()):
                     aktliste_rows.append(row_dict)
-
-
-
         else:
             print("⚠️ Mangler nødvendige kolonner eller tomme.")
 
