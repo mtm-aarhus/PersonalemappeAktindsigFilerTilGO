@@ -8,7 +8,7 @@ from OpretAktliste import invoke_GenerateAndUploadAktlistePDF
 from Funktioner import *
 from sqlalchemy import create_engine, text
 from datetime import datetime
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, quote
 
 def process(orchestrator_connection: OrchestratorConnection, queue_element: QueueElement | None = None) -> None:
     specific_content = json.loads(queue_element.data)
@@ -35,8 +35,6 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     PersonaleSagsTitel= specific_content.get('PersonaleSagsTitel')
     Udleveringsmappelink = specific_content.get('Udleveringsmappelink')
     dokumentlisteovermappe = specific_content.get("dokumentlisteovermappe")
-    if not dokumentlisteovermappe:
-        dokumentlisteovermappe = '129651 - PER-2024-000254 - Personaleaktindsigtsanmodning'
 
     orchestrator_connection.log_info(f'Variable {SagsID}, {PersonaleSagsTitel}')
 
@@ -48,7 +46,9 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     #1 - definer sharepointsite url og mapper
     orchestrator_connection.log_info('Defininf sharepoint stuff')
 
-    relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/Delte dokumenter/Dokumentlister/{dokumentlisteovermappe}'
+    encoded_folder = quote(dokumentlisteovermappe)
+    encoded_library = quote("Delte dokumenter")
+    relative_url = f'{SharepointSiteUrl.split(".com/")[-1]}/{encoded_library}/Dokumentlister/{encoded_folder}'
 
     downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
     today_date = datetime.now().strftime("%d-%m-%Y")
