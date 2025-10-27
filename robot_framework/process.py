@@ -91,12 +91,12 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
                         "Dato": today_date,
                         "CCMMustBeOnPostList": "0"
                     }
-        orchestrator_connection.log_info('Making payload doc')
-        payload = make_payload_document(ows_dict= ows_dict, caseID = CaseID, FolderPath= "", byte_arr= byte_arr, filename = filename )
-        orchestrator_connection.log_info('uploading docs')
+            orchestrator_connection.log_info('Making payload doc')
+            payload = make_payload_document(ows_dict= ows_dict, caseID = CaseID, FolderPath= "", byte_arr= byte_arr, filename = filename )
+            orchestrator_connection.log_info('uploading docs')
 
-        upload_document_go(gotesturl, payload = payload, session = session)
-        delete_local_file(filsti = file_path)
+            upload_document_go(gotesturl, payload = payload, session = session)
+            delete_local_file(filsti = file_path)
         args = {
         "in_dt_AktIndex": aktliste_data,
         "in_Sagsnummer": CaseID,
