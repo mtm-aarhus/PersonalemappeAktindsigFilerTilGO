@@ -46,7 +46,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
         delete_case_go(gotesturl, session, UdleveringsSagsID)
         orchestrator_connection.log_info(f'Gammel delingsmappe slettet for sag {UdleveringsSagsID}')
     else:
-        orchestrator_connection.log_info('Ingen udleveringsmappe i forvejen')
+        orchestrator_connection.log_info(f'Ingen udleveringsmappe i forvejen {Udleveringsmappelink}')
     #1 - definer sharepointsite url og mapper
     orchestrator_connection.log_info('Defining sharepoint stuff')
 
@@ -94,8 +94,10 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
                         "Dato": today_date,
                         "CCMMustBeOnPostList": "0"
                     }
+            orchestrator_connection.log_info(f'ows dict {ows_dict}')
             orchestrator_connection.log_info('Making payload doc')
             payload = make_payload_document(ows_dict= ows_dict, caseID = CaseID, FolderPath= "", byte_arr= byte_arr, filename = filename )
+            orchestrator_connection.log_info(f'payload {payload}')
             orchestrator_connection.log_info('uploading docs')
 
             upload_document_go(gotesturl, payload = payload, session = session)
