@@ -9,6 +9,36 @@ from Funktioner import *
 from sqlalchemy import create_engine, text
 from datetime import datetime
 from urllib.parse import quote_plus, quote
+from GoBrugerstyring import *
+import smtplib
+from email.message import EmailMessage
+from robot_framework import config
+
+def send_error_email(to_address: str , caseid):
+    """Sends and email to caseworker if caseurl is not valid (most likely invalid casenumber)
+    """
+    # Create message
+    msg = EmailMessage()
+    msg['to'] = to_address
+    msg['from'] = "personaleindsigt@aarhus.dk"
+    msg['subject'] = f"Fejl! Filer ikke overført: {caseid}"
+
+    # Create an HTML message with the exception and screenshot
+    html_message = f"""
+    <html>
+        <body>
+            <p>Du mangler at oprette en dokumentliste for {caseid}</p>
+            <p>Tryk 'accepter' for at oprette dokumentlisten.</p>
+        </body>
+    </html>
+    """
+
+    msg.set_content("Please enable HTML to view this message.")
+    msg.add_alternative(html_message, subtype='html')
+
+    # Send message
+    with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT) as smtp:
+        smtp.send_message(msg)
 
 def process(orchestrator_connection: OrchestratorConnection, queue_element: QueueElement | None = None) -> None:
     specific_content = json.loads(queue_element.data)
@@ -32,9 +62,13 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     #Definer variable
     SagsID = specific_content.get('caseid')
     SagsbehandlerMail = specific_content.get('SagsbehandlerEmail')
+    AnmoderMail = specific_content.get('AnmoderMail')
     PersonaleSagsTitel= specific_content.get('PersonaleSagsTitel')
     Udleveringsmappelink = specific_content.get('Udleveringsmappelink')
     dokumentlisteovermappe = specific_content.get("dokumentlisteovermappe")
+    if not dokumentlisteovermappe:
+        send_error_email(SagsbehandlerMail, SagsID)
+        return
 
     orchestrator_connection.log_info(f'Variable {SagsID}, {PersonaleSagsTitel}')
     session = create_session(go_username_test, go_password_test)
@@ -104,14 +138,19 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
             delete_local_file(filsti = file_path)
         args = {
         "in_dt_AktIndex": aktliste_data,
-        "in_Sagsnummer": CaseID,
-        "CasePath": RelativeSagsUrl, 
+        "in_Sagsnummer": PersonaleSagsTitel,
         "in_DokumentlisteDatoString": today_date,
         "in_GoUsername": go_username_test,
         "in_GoPassword": go_password_test}
-        orchestrator_connection.log_info('Makinf aktliste')
-        invoke_GenerateAndUploadAktlistePDF(args, orchestrator_connection= orchestrator_connection, session = session, gourl = gotesturl)
+        orchestrator_connection.log_info('Making aktliste')
+        invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = gotesturl)
         send_succes_email(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, Url = CaseUrl, orchestrator_connection = orchestrator_connection)
+
+        #Sætter brugerstyring på go-udleveringsmappe - aktiveres først, når vi opretter i produktionsmiljøet
+        ITEM_ID = "1249"
+        # update_case_owner(go_api_url, go_username, go_password, CaseID, ITEM_ID, SagsbehandlerMail, AnmoderMail)
+        # close_case(go_api_url= go_api_url, case_id = CaseID, session = session)
+
         orchestrator_connection.log_info('Logging info to database')
         SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
         DATABASE_NAME = "AktindsigterPersonalemapper"

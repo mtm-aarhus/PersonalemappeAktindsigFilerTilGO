@@ -1,36 +1,34 @@
 from OpenOrchestrator.orchestrator_connection.connection import OrchestratorConnection
-def invoke_GenerateAndUploadAktlistePDF(Arguments_GenerateAndUploadAktlistePDF, orchestrator_connection: OrchestratorConnection, session, gourl):
-    import os
-    import shutil
-    from openpyxl import Workbook
-    from openpyxl.utils import get_column_letter
-    from openpyxl.styles import Alignment
-    from openpyxl.worksheet.table import Table, TableStyleInfo
-    import pandas as pd
-    from datetime import datetime 
-    import time        
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font
-    from openpyxl.utils import get_column_letter
-    from openpyxl.worksheet.table import Table, TableStyleInfo
-    from openpyxl.worksheet.dimensions import ColumnDimension
-    import textwrap
-    # ReportLab Imports
-    from reportlab.pdfgen import canvas as reportlab_canvas
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib import colors as reportlab_colors
-    from reportlab.platypus import Table as ReportTable, TableStyle as ReportTableStyle, Paragraph, SimpleDocTemplate, Frame, PageTemplate
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from Funktioner import make_payload_document, upload_document_go
+import os
+import shutil
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment
+from openpyxl.worksheet.table import Table, TableStyleInfo
+import pandas as pd
+from datetime import datetime 
+import time        
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.worksheet.dimensions import ColumnDimension
+import textwrap
+# ReportLab Imports
+from reportlab.pdfgen import canvas as reportlab_canvas
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors as reportlab_colors
+from reportlab.platypus import Table as ReportTable, TableStyle as ReportTableStyle, Paragraph, SimpleDocTemplate, Frame, PageTemplate
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from Funktioner import make_payload_document, upload_document_go
+
+def invoke_GenerateAndUploadAktlistePDF(Arguments_GenerateAndUploadAktlistePDF, session, gourl):
+
 
     # henter in_argumenter:
     dt_AktIndex = Arguments_GenerateAndUploadAktlistePDF.get("in_dt_AktIndex")
     Sagsnummer = Arguments_GenerateAndUploadAktlistePDF.get("in_Sagsnummer")
-    CasePath = Arguments_GenerateAndUploadAktlistePDF.get("CasePath")
     DokumentlisteDatoString = Arguments_GenerateAndUploadAktlistePDF.get("in_DokumentlisteDatoString")
-    GoUsername = Arguments_GenerateAndUploadAktlistePDF.get("in_GoUsername")
-    GoPassword = Arguments_GenerateAndUploadAktlistePDF.get("in_GoPassword")
-
 
     def create_excel(data_table, file_path):
         try:

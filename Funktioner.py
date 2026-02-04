@@ -21,10 +21,10 @@ def create_case(go_api_url, SagsTitel, AktID, session):
     '''
     Function for creating case in GetOrganized for the applicant to access
     '''
-    url = f"{go_api_url}/geosager/_goapi/Cases"
+    url = f"{go_api_url}/aktindsigt/_goapi/Cases"
 
     payload = json.dumps({
-    "CaseTypePrefix": "GEO",
+    "CaseTypePrefix": "AKT",
     "MetadataXml": f"<z:row xmlns:z=\"#RowsetSchema\" ows_Title=\"Aktindsigtssag {AktID} - {SagsTitel}\" ows_CaseStatus=\"Åben\" ows_EksterntSagsID=\"TestSagsID\" ows_EksterntSystemID=\"TestSystemID\" />",
     "ReturnWhenCaseFullyCreated": True
     })
@@ -50,7 +50,7 @@ def delete_case_go(go_api_url, session, sagsnummer):
     '''
     Deletes case in go
     '''
-    url = f"{go_api_url}/geosager/_goapi/Cases/{sagsnummer}"
+    url = f"{go_api_url}/aktindsigt/_goapi/Cases/{sagsnummer}"
     response = session.delete(url, data= {"Data": ""}, timeout=1200)
     response.raise_for_status()
     return response.json()
