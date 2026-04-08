@@ -303,16 +303,17 @@ def invoke_GenerateAndUploadAktlistePDF(Arguments_GenerateAndUploadAktlistePDF, 
         "Korrespondance": "Udgående",
         "Dato": DokumentlisteDatoString,
         "CCMMustBeOnPostList": "0"}
-    payload = make_payload_document(
-        ows_dict=ows_dict,
-        caseID=CaseID,
-        FolderPath="",
-        byte_arr=byte_arr,
-        filename=PDFAktlisteFilnavn)
+   
     with open(pdf_path, "rb") as local_file:
         file_content = local_file.read()
         byte_arr = list(file_content)
-
+        
+     payload = make_payload_document(
+            ows_dict=ows_dict,
+            caseID=CaseID,
+            FolderPath="",
+            byte_arr=byte_arr,
+            filename=PDFAktlisteFilnavn)
     # payload = make_payload_document(ows_dict= ows_dict, caseID = Sagsnummer, FolderPath= "", byte_arr= byte_arr, filename = PDFAktlisteFilnavn )
     upload_document_go(gourl, payload = payload, session = session)
 
