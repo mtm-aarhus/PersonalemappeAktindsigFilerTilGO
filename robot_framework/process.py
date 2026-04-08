@@ -141,7 +141,8 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
         "in_Sagsnummer": PersonaleSagsTitel,
         "in_DokumentlisteDatoString": today_date,
         "in_GoUsername": go_username_test,
-        "in_GoPassword": go_password_test}
+        "in_GoPassword": go_password_test,
+        "in_CaseID": CaseID,}
         orchestrator_connection.log_info('Making aktliste')
         invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = gotesturl)
         send_succes_email(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, Url = CaseUrl, orchestrator_connection = orchestrator_connection)
