@@ -9,7 +9,6 @@ from Funktioner import *
 from sqlalchemy import create_engine, text
 from datetime import datetime
 from urllib.parse import quote_plus, quote
-from GoBrugerstyring import *
 import smtplib
 from email.message import EmailMessage
 from robot_framework import config
