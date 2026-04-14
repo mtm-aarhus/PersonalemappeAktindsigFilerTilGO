@@ -12,6 +12,7 @@ from urllib.parse import quote_plus, quote
 import smtplib
 from email.message import EmailMessage
 from robot_framework import config
+from GoBrugerstyring import *
 
 def send_error_email(to_address: str , caseid):
     """Sends and email to caseworker if caseurl is not valid (most likely invalid casenumber)
@@ -43,7 +44,6 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     specific_content = json.loads(queue_element.data)
 
     SharepointSiteUrl = orchestrator_connection.get_constant("AktindsigtPersonalemapperSharepointURL").value
-    gotesturl = orchestrator_connection.get_constant('GOApiTESTURL').value
     go_api_url = orchestrator_connection.get_constant("GOApiURL").value
     go_api_login = orchestrator_connection.get_credential("GOAktApiUser")
     robot_user = orchestrator_connection.get_credential("Robot365User")
@@ -51,9 +51,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     password = robot_user.password
     go_username = go_api_login.username
     go_password = go_api_login.password
-    go_test_login = orchestrator_connection.get_credential("GOTestApiUser")
-    go_username_test = go_test_login.username
-    go_password_test = go_test_login.password
+
 
     specific_content = json.loads(queue_element.data)
     orchestrator_connection.log_info('Got constants')
@@ -70,13 +68,13 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
         return
 
     orchestrator_connection.log_info(f'Variable {SagsID}, {PersonaleSagsTitel}')
-    session = create_session(go_username_test, go_password_test)
+    session = create_session(go_username, go_password)
 
     if Udleveringsmappelink:
         #hvis der allerede ligger en udleveringsmappe skal den slettes for ikke at have dobbeltmapper til at ligge
         UdleveringsSagsID = Udleveringsmappelink.rsplit("/")[-1]
         orchestrator_connection.log_info(f'Gammel udleveringsmappe detekteret {UdleveringsSagsID} {Udleveringsmappelink}')
-        delete_case_go(gotesturl, session, UdleveringsSagsID)
+        delete_case_go(go_api_url, session, UdleveringsSagsID)
         orchestrator_connection.log_info(f'Gammel delingsmappe slettet for sag {UdleveringsSagsID}')
     else:
         orchestrator_connection.log_info(f'Ingen udleveringsmappe i forvejen {Udleveringsmappelink}')
@@ -95,56 +93,53 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
 
     #3 - Opret en sag
     orchestrator_connection.log_info('Opretter sag')
-    session = create_session(go_username_test, go_password_test)
-    CreatedCase = json.loads(create_case(gotesturl, PersonaleSagsTitel, SagsID, session))
+    session = create_session(go_username, go_password)
+    CreatedCase = json.loads(create_case(go_api_url, PersonaleSagsTitel, SagsID, session))
     
     RelativeSagsUrl = CreatedCase['CaseRelativeUrl']
-    CaseUrl = f'{gotesturl}/{RelativeSagsUrl}'
+    CaseUrl = f'{go_api_url}/{RelativeSagsUrl}'
     CaseID = CreatedCase['CaseID']
     
     #og upload filerne hvis der er nogen
     orchestrator_connection.log_info('Uploader filer')
-    if res:
-        for file in res:
-            orchestrator_connection.log_info('Processing new file')
-            FilEndelse = file[2].rsplit('.')[-1]
-            file_path = f'{downloads_folder}\{file[0]}.{FilEndelse}'
-            AktID = file[3]
-            filename = f'{AktID} - {file[0]}.{FilEndelse}'
-            
-            download_file(file_path, file[1], go_api_url, go_username, go_password)
-            time.sleep(3)
+    for file in res:
+        orchestrator_connection.log_info('Processing new file')
+        FilEndelse = file[2].rsplit('.')[-1]
+        file_path = f'{downloads_folder}\{file[0]}.{FilEndelse}'
+        AktID = file[3]
+        filename = f'{AktID} - {file[0]}.{FilEndelse}'
+        
+        download_file(file_path, file[1], go_api_url, go_username, go_password)
+        time.sleep(3)
 
-            with open(file_path, "rb") as local_file:
-                file_content = local_file.read()
-                byte_arr = list(file_content)
+        with open(file_path, "rb") as local_file:
+            file_content = local_file.read()
+            byte_arr = list(file_content)
 
-            ows_dict = {
-                        "Title": filename,
-                        "CaseID": CaseID,  # Replace with your case ID
-                        "Beskrivelse": "Uploaded af personaleaktbob",  # Add relevant description
-                        "Korrespondance": "Udgående",
-                        "Dato": today_date,
-                        "CCMMustBeOnPostList": "0"
-                    }
-            orchestrator_connection.log_info(f'ows dict {ows_dict}')
-            orchestrator_connection.log_info('Making payload doc')
-            payload = make_payload_document(ows_dict= ows_dict, caseID = CaseID, FolderPath= "", byte_arr= byte_arr, filename = filename )
-            orchestrator_connection.log_info(f'payload {payload}')
-            orchestrator_connection.log_info('uploading docs')
+        ows_dict = {
+                    "Title": filename,
+                    "CaseID": CaseID,  # Replace with your case ID
+                    "Beskrivelse": "Uploaded af personaleaktbob",  # Add relevant description
+                    "Korrespondance": "Udgående",
+                    "Dato": today_date,
+                    "CCMMustBeOnPostList": "0"
+                }
+        payload = make_payload_document(ows_dict= ows_dict, caseID = CaseID, FolderPath= "", byte_arr= byte_arr, filename = filename )
 
-            upload_document_go(gotesturl, payload = payload, session = session)
-            delete_local_file(filsti = file_path)
+        upload_document_go(go_api_url, payload = payload, session = session)
+        delete_local_file(filsti = file_path)
         args = {
         "in_dt_AktIndex": aktliste_data,
         "in_Sagsnummer": PersonaleSagsTitel,
         "in_DokumentlisteDatoString": today_date,
-        "in_GoUsername": go_username_test,
-        "in_GoPassword": go_password_test,
+        "in_GoUsername": go_username,
+        "in_GoPassword": go_password,
         "in_CaseID": CaseID,}
         orchestrator_connection.log_info('Making aktliste')
-        invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = gotesturl)
+        invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = go_api_url)
         send_succes_email(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, Url = CaseUrl, orchestrator_connection = orchestrator_connection)
+        ITEM_ID = "1249"
+        update_case_owner(go_api_url, go_username, go_password, CaseID, ITEM_ID, SagsbehandlerMail)
 
         orchestrator_connection.log_info('Logging info to database')
         SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
