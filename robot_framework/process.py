@@ -146,11 +146,6 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
         invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = gotesturl)
         send_succes_email(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, Url = CaseUrl, orchestrator_connection = orchestrator_connection)
 
-        #Sætter brugerstyring på go-udleveringsmappe - aktiveres først, når vi opretter i produktionsmiljøet
-        ITEM_ID = "1249"
-        # update_case_owner(go_api_url, go_username, go_password, CaseID, ITEM_ID, SagsbehandlerMail, AnmoderMail)
-        # close_case(go_api_url= go_api_url, case_id = CaseID, session = session)
-
         orchestrator_connection.log_info('Logging info to database')
         SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
         DATABASE_NAME = "AktindsigterPersonalemapper"
