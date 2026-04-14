@@ -28,6 +28,7 @@ def invoke_GenerateAndUploadAktlistePDF(Arguments_GenerateAndUploadAktlistePDF, 
     # henter in_argumenter:
     dt_AktIndex = Arguments_GenerateAndUploadAktlistePDF.get("in_dt_AktIndex")
     Sagsnummer = Arguments_GenerateAndUploadAktlistePDF.get("in_Sagsnummer")
+    CaseID = Arguments_GenerateAndUploadAktlistePDF.get("in_CaseID")
     DokumentlisteDatoString = Arguments_GenerateAndUploadAktlistePDF.get("in_DokumentlisteDatoString")
 
     def create_excel(data_table, file_path):
@@ -296,19 +297,19 @@ def invoke_GenerateAndUploadAktlistePDF(Arguments_GenerateAndUploadAktlistePDF, 
     downloads_path = os.path.join("C:\\Users", os.getlogin(), "Downloads")
     pdf_path = os.path.join(downloads_path, PDFAktlisteFilnavn)
     ows_dict = {
-            "Title": PDFAktlisteFilnavn,
-            "CaseID": Sagsnummer,  # Replace with your case ID
-            "Beskrivelse": "Uploaded af personaleaktbob",  # Add relevant description
-            "Korrespondance": "Udgående",
-            "Dato": DokumentlisteDatoString,
-            "CCMMustBeOnPostList": "0"
-        }
-    
+        "Title": PDFAktlisteFilnavn,
+        "CaseID": CaseID,
+        "Beskrivelse": "Uploaded af personaleaktbob",
+        "Korrespondance": "Udgående",
+        "Dato": DokumentlisteDatoString,
+        "CCMMustBeOnPostList": "0"}
+   
     with open(pdf_path, "rb") as local_file:
         file_content = local_file.read()
         byte_arr = list(file_content)
-
-    payload = make_payload_document(ows_dict= ows_dict, caseID = Sagsnummer, FolderPath= "", byte_arr= byte_arr, filename = PDFAktlisteFilnavn )
+        
+    payload = make_payload_document(ows_dict=ows_dict,caseID=CaseID,FolderPath="",byte_arr=byte_arr,filename=PDFAktlisteFilnavn)
+    # payload = make_payload_document(ows_dict= ows_dict, caseID = Sagsnummer, FolderPath= "", byte_arr= byte_arr, filename = PDFAktlisteFilnavn )
     upload_document_go(gourl, payload = payload, session = session)
 
     #Deleting local files: 
