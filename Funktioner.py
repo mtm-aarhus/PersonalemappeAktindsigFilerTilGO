@@ -25,7 +25,7 @@ def create_case(go_api_url, SagsTitel, AktID, session):
 
     payload = json.dumps({
     "CaseTypePrefix": "AKT",
-    "MetadataXml": f"<z:row xmlns:z=\"#RowsetSchema\" ows_Title=\"Aktindsigtssag {AktID} - {SagsTitel}\" ows_CaseStatus=\"Åben\" ows_EksterntSagsID=\"TestSagsID\" ows_EksterntSystemID=\"TestSystemID\" />",
+    "MetadataXml": f"<z:row xmlns:z=\"#RowsetSchema\" ows_Title=\"Aktindsigtssag {AktID} - {SagsTitel}\" ows_CaseStatus=\"Åben\" />",
     "ReturnWhenCaseFullyCreated": True
     })
     headers = {
@@ -33,6 +33,8 @@ def create_case(go_api_url, SagsTitel, AktID, session):
     }
 
     response = session.post(url, headers=headers, data=payload)
+    print(response.text)
+    print(response.status_code)
 
     return response.text
 
