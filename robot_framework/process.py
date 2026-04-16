@@ -102,73 +102,86 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     
     #og upload filerne hvis der er nogen
     orchestrator_connection.log_info('Uploader filer')
+    ikke_konverterede_filer = []  # Tilføj før loopet
+
     for file in res:
         orchestrator_connection.log_info('Processing new file')
         FilEndelse = file[2].rsplit('.')[-1]
         file_path = f'{downloads_folder}\{file[0]}.{FilEndelse}'
         AktID = file[3]
+
+        # Erstat download_file + read med try_convert_go_file_to_pdf
+        byte_result, is_pdf, ikke_konverteret = try_convert_go_file_to_pdf(go_api_url, file[1], session, go_username, go_password, go_api_url, file_path, orchestrator_connection)
+
+        if ikke_konverteret:
+            ikke_konverterede_filer.append(ikke_konverteret)
+
+        if byte_result is None:
+            orchestrator_connection.log_info(f"Kunne ikke hente fil {file[0]} - springer over")
+            continue
+
+        # Sæt filendelse til pdf hvis konverteret
+        if is_pdf:
+            FilEndelse = "pdf"
+
         filename = f'{AktID} - {file[0]}.{FilEndelse}'
-        
-        download_file(file_path, file[1], go_api_url, go_username, go_password)
-        time.sleep(3)
+        byte_arr = list(byte_result)
 
-        with open(file_path, "rb") as local_file:
-            file_content = local_file.read()
-            byte_arr = list(file_content)
-
+        # Resten er uændret
         ows_dict = {
-                    "Title": filename,
-                    "CaseID": CaseID,  # Replace with your case ID
-                    "Beskrivelse": "Uploaded af personaleaktbob",  # Add relevant description
-                    "Korrespondance": "Udgående",
-                    "Dato": today_date,
-                    "CCMMustBeOnPostList": "0"
-                }
-        payload = make_payload_document(ows_dict= ows_dict, caseID = CaseID, FolderPath= "", byte_arr= byte_arr, filename = filename )
+            "Title": filename,
+            "CaseID": CaseID,
+            "Beskrivelse": "Uploaded af personaleindsigt",
+            "Korrespondance": "Udgående",
+            "Dato": today_date,
+            "CCMMustBeOnPostList": "0"
+        }
+        payload = make_payload_document(ows_dict=ows_dict, caseID=CaseID, FolderPath="", byte_arr=byte_arr, filename=filename)
+        upload_document_go(go_api_url, payload=payload, session=session)
+        delete_local_file(filsti=file_path)
+    args = {
+    "in_dt_AktIndex": aktliste_data,
+    "in_Sagsnummer": PersonaleSagsTitel,
+    "in_DokumentlisteDatoString": today_date,
+    "in_GoUsername": go_username,
+    "in_GoPassword": go_password,
+    "in_CaseID": CaseID,}
+    orchestrator_connection.log_info('Making aktliste')
+    invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = go_api_url)
+    orchestrator_connection.log_info('Setting case owner')
+    update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail )
+    if not update_case_owner:
+        orchestrator_connection.log_error('Bruger kan ikke fremsøges i GO')
+        raise Exception
+    send_succes_email(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, Url = CaseUrl, orchestrator_connection = orchestrator_connection, ikke_konverterede_filer = ikke_konverterede_filer)
+    orchestrator_connection.log_info('Logging info to database')
+    SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
+    DATABASE_NAME = "AktindsigterPersonalemapper"
 
-        upload_document_go(go_api_url, payload = payload, session = session)
-        delete_local_file(filsti = file_path)
-        args = {
-        "in_dt_AktIndex": aktliste_data,
-        "in_Sagsnummer": PersonaleSagsTitel,
-        "in_DokumentlisteDatoString": today_date,
-        "in_GoUsername": go_username,
-        "in_GoPassword": go_password,
-        "in_CaseID": CaseID,}
-        orchestrator_connection.log_info('Making aktliste')
-        invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = go_api_url)
-        send_succes_email(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, Url = CaseUrl, orchestrator_connection = orchestrator_connection)
-        ITEM_ID = "1249"
-        update_case_owner(go_api_url, go_username, go_password, CaseID, ITEM_ID, SagsbehandlerMail)
+    odbc_str = (
+        "DRIVER={SQL Server};"
+        f"SERVER={SQL_SERVER};"
+        f"DATABASE={DATABASE_NAME};"
+        "Trusted_Connection=yes;"
+    )
 
-        orchestrator_connection.log_info('Logging info to database')
-        SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
-        DATABASE_NAME = "AktindsigterPersonalemapper"
+    odbc_str_quoted = quote_plus(odbc_str)
+    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_str_quoted}", future=True)
 
-        odbc_str = (
-            "DRIVER={SQL Server};"
-            f"SERVER={SQL_SERVER};"
-            f"DATABASE={DATABASE_NAME};"
-            "Trusted_Connection=yes;"
-        )
+    sql = text("""
+        UPDATE dbo.cases
+        SET Udleveringsmappelink = :link,
+            last_run_transfer_go = :ts
+        WHERE aktid = :caseid
+    """)
 
-        odbc_str_quoted = quote_plus(odbc_str)
-        engine = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_str_quoted}", future=True)
-
-        sql = text("""
-            UPDATE dbo.cases
-            SET Udleveringsmappelink = :link,
-                last_run_transfer_go = :ts
-            WHERE aktid = :caseid
-        """)
-
-        with engine.begin() as conn:
-            result = conn.execute(sql, {
-                "link": CaseUrl,
-                "ts": datetime.now(),
-                "caseid": str(SagsID)
-            })
-            if result.rowcount == 0:
-                orchestrator_connection.log_info(f"⚠️ Ingen sag fundet med aktid={SagsID}")
-            else:
-                orchestrator_connection.log_info(f"✅ Opdateret sag {SagsID} med udleveringslink:")
+    with engine.begin() as conn:
+        result = conn.execute(sql, {
+            "link": CaseUrl,
+            "ts": datetime.now(),
+            "caseid": str(SagsID)
+        })
+        if result.rowcount == 0:
+            orchestrator_connection.log_info(f"⚠️ Ingen sag fundet med aktid={SagsID}")
+        else:
+            orchestrator_connection.log_info(f"✅ Opdateret sag {SagsID} med udleveringslink:")

@@ -15,7 +15,7 @@ from datetime import datetime
 import time
 import os
 from urllib.parse import unquote, urlparse
-
+from robot_framework import config
 
 def create_case(go_api_url, SagsTitel, AktID, session):
     '''
@@ -57,40 +57,60 @@ def delete_case_go(go_api_url, session, sagsnummer):
     response.raise_for_status()
     return response.json()
 
-def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection):
+       
+        
+def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_konverterede_filer ):
     SMTP_SERVER = "smtp.adm.aarhuskommune.dk"
     SMTP_PORT = 25
-    SCREENSHOT_SENDER = "PersonaleAktindsigtssag@aarhus.dk"
+    SCREENSHOT_SENDER = "personaleindsigt@aarhus.dk"
     subject_sagsbehandler = f"Sag nr. {SagsID}: Dokumenterne er overført til GO"
-
-
-    html = f"""
-    <html>
-    <body>
-        <p>Dokumenterne, der er angivet som 'Ja' eller 'Delvis' i dokumentlisterne er overført til GO.</p>
-        <p>Du kan se sagen og gennemgå dokumenterne inden udlevering på linket herunder: </p>
-        <a href = "{Url}"> Link til sagen </a> 
-    </body>
-    </html>
-    """
-    # Create the email message
-    UdviklerMail = orchestrator_connection.get_constant('balas').value
-
-    msg = EmailMessage()
-    msg['To'] = ModtagerMail
-    msg['From'] = SCREENSHOT_SENDER
-    msg['Subject'] = subject_sagsbehandler
-    msg.set_content("Please enable HTML to view this message.")
-    msg.add_alternative(html, subtype='html')
-    msg['Reply-To'] = UdviklerMail
-    msg['Bcc'] = UdviklerMail
-   
-    # Send the email using SMTP
-    try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+    if ikke_konverterede_filer:
+        FinalString = "<br>".join(ikke_konverterede_filer)
+        msg = EmailMessage()
+        msg['To'] = ModtagerMail
+        msg['From'] = "personaleindsigt@aarhus.dk"
+        msg['Subject'] = f"{SagsID} - Filer kunne ikke konverteres til PDF"
+        msg.set_content("Please enable HTML to view this message.")
+        html_message = f"""
+            <html>
+                <body>
+                    <p>Upload to GO er nu afsluttet.</p>
+                    <p>Bemærk at følgende filer ikke kunne konverteres til PDF, og skal behandles manuelt: {FinalString} </p>
+                </body>
+            </html>
+            """
+        msg.add_alternative(html_message, subtype='html')
+        with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT) as smtp:
             smtp.send_message(msg)
-    except Exception as e:
-        print(e)
+    else:
+
+        html = f"""
+        <html>
+        <body>
+            <p>Dokumenterne, der er angivet som 'Ja' eller 'Delvis' i dokumentlisterne er overført til GO.</p>
+            <p>Du kan se sagen og gennemgå dokumenterne inden udlevering på linket herunder: </p>
+            <a href = "{Url}"> Link til sagen </a> 
+        </body>
+        </html>
+        """
+        # Create the email message
+        UdviklerMail = orchestrator_connection.get_constant('balas').value
+
+        msg = EmailMessage()
+        msg['To'] = ModtagerMail
+        msg['From'] = SCREENSHOT_SENDER
+        msg['Subject'] = subject_sagsbehandler
+        msg.set_content("Please enable HTML to view this message.")
+        msg.add_alternative(html, subtype='html')
+        msg['Reply-To'] = UdviklerMail
+        msg['Bcc'] = UdviklerMail
+    
+        # Send the email using SMTP
+        try:
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+                smtp.send_message(msg)
+        except Exception as e:
+            print(e)
 
 def create_session (Username, PasswordString):
     # Create a session
@@ -324,3 +344,89 @@ def make_payload_document(ows_dict: dict, caseID: str, FolderPath: str, byte_arr
         "Metadata": MetaDataXML,
         "Overwrite": True
     }
+
+def fetch_document_info_go(api_url, DokumentID, session, AktID, Titel):
+    url = f"{api_url}/_goapi/Documents/Data/{DokumentID}"
+    response = session.get(url)
+    data = json.loads(response.text)
+    item_properties = data.get("ItemProperties", "")
+    file_type_match = re.search(r'ows_File_x0020_Type="([^"]+)"', item_properties)
+    version_ui_match = re.search(r'ows__UIVersionString="([^"]+)"', item_properties)
+    DokumentType = file_type_match.group(1) if file_type_match else "unknown"
+    VersionUI = version_ui_match.group(1) if version_ui_match else "Not found"
+    file_title = f"{AktID} - {DokumentID} - {Titel}"
+    return {"DokumentType": DokumentType, "VersionUI": VersionUI, "file_title": file_title}
+
+def fetch_document_bytes(api_url, session, DokumentID, file_path=None, max_retries=30, retry_interval=5):
+    url = f"{api_url}/_goapi/Documents/DocumentBytes/{DokumentID}"
+    ByteResult = None
+    for attempt in range(max_retries):
+        try:
+            response = session.get(url, timeout=180)
+            response.raise_for_status()
+            if b"HTTP Error 503. The service is unavailable." in response.content:
+                print(f"Attempt {attempt + 1}: 503 fejl")
+                time.sleep(retry_interval)
+                continue
+            ByteResult = response.content
+            break
+        except Exception as e:
+            print(f"Attempt {attempt + 1}: {e}")
+            time.sleep(retry_interval)
+    if file_path and ByteResult:
+        with open(file_path, "wb") as f:
+            f.write(ByteResult)
+    return ByteResult
+
+def GOPDFConvert(api_url, DokumentID, VersionUI, GoUsername, GoPassword):
+    try:
+        url = f"{api_url}/_goapi/Documents/ConvertToPDF/{DokumentID}/{VersionUI}"
+        response = requests.get(
+            url,
+            auth=HttpNtlmAuth(GoUsername, GoPassword),
+            headers={"Content-Type": "application/json"},
+            timeout=None
+        )
+        if "Document could not be converted" in response.text:
+            return None
+        return response.content
+    except Exception:
+        return None
+def try_convert_go_file_to_pdf(api_url, DokumentID, session, GoUsername, GoPassword, GOUrl, file_path, orchestrator_connection=None):
+    metadata = fetch_document_info_go(api_url, DokumentID, session, 0, "temp")
+    VersionUI = metadata["VersionUI"]
+    DokumentType = metadata["DokumentType"]
+    titel = os.path.basename(file_path)
+
+    if DokumentType.lower() == "pdf":
+        if orchestrator_connection:
+            orchestrator_connection.log_info(f"{DokumentID} er allerede PDF")
+        byte_result = fetch_document_bytes(api_url, session, DokumentID)
+        return byte_result, True, None
+
+    # 1️⃣ Forsøg GO konvertering
+    result = GOPDFConvert(api_url, DokumentID, VersionUI, GoUsername, GoPassword)
+    if result:
+        if orchestrator_connection:
+            orchestrator_connection.log_info(f"{DokumentID} konverteret via GO")
+        return result, True, None
+
+    # 2️⃣ Forsøg fetch_document_bytes
+    if orchestrator_connection:
+        orchestrator_connection.log_info(f"{DokumentID} GO-konvertering fejlede, forsøger fetch_document_bytes")
+    byte_result = fetch_document_bytes(api_url, session, DokumentID, file_path=file_path)
+    if byte_result:
+        return byte_result, False, titel
+
+    # 3️⃣ Forsøg download via metadata-URL
+    if orchestrator_connection:
+        orchestrator_connection.log_info(f"{DokumentID} fetch_document_bytes fejlede, forsøger metadata-URL")
+    try:
+        download_file(file_path, DokumentID, GOUrl, GoUsername, GoPassword)
+        with open(file_path, "rb") as f:
+            byte_result = f.read()
+        return byte_result, False, titel
+    except Exception as e:
+        if orchestrator_connection:
+            orchestrator_connection.log_info(f"{DokumentID} alle download-metoder fejlede: {e}")
+        return None, False, titel

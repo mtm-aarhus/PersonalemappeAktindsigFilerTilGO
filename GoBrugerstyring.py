@@ -50,18 +50,38 @@ def search_sharepoint_user(root_api_url: str, session: requests.Session, digest:
             return entity
     return None
 
-def update_case_field(api_url: str, session: requests.Session, digest: str, item_id: str, form_values: list):
+def get_list_and_id(api_url, aktid, session):
+    """Henter liste og itemid til opdatering af bruger i go."""
+    endpoint = f"{api_url}/cases/AKT50/{aktid}/_goapi/Administration/ModernConfiguration"
+    
+    payload = {
+        "providerTypes": ["ModernCase", "MoveDocument", "Insight", "SearchSystem", "UserSettings"]
+    }
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    
+    r = session.post(endpoint, headers=headers, json=payload)
+    r.raise_for_status()
+    data = r.json()
+    caselist = data.get("ModernCase").get("ItemServerUrl").split('/')[-2]
+    itemid = data.get("ModernCase").get("ListItemID")
+    return(caselist, itemid)
+
+def update_case_field(api_url: str, session: requests.Session, digest: str, form_values: list, listnumber, item_id):
     """Opdaterer felt(er) i sagslisten."""
     endpoint = (
         f"{api_url}/aktindsigt/_api/web/GetList(@a1)/items(@a2)/ValidateUpdateListItem()"
-        f"?@a1='%2Faktindsigt%2FLists%2FCases1'&@a2='{item_id}'"
+        f"?@a1='%2Faktindsigt%2FLists%2F{listnumber}'&@a2='{item_id}'"
     )
 
     headers = {
         "Accept": "application/json;odata=verbose",
         "Content-Type": "application/json;odata=verbose",
         "X-RequestDigest": digest,
-        "X-Sp-Requestresources": "listUrl=%2Faktindsigt%2FLists%2FCases1"
+        "X-Sp-Requestresources": f"listUrl=%2Faktindsigt%2FLists%2F{listnumber}"
     }
 
     payload = {
@@ -70,12 +90,11 @@ def update_case_field(api_url: str, session: requests.Session, digest: str, item
         "checkInComment": None
     }
 
-    print(f"Updating case {item_id}...")
     r = session.post(endpoint, headers=headers, data=json.dumps(payload))
     r.raise_for_status()
     return r.json()
 
-def update_case_owner(api_url: str, username: str, password: str, case_id: str, item_id: str, email_sagsbehandler: str, ):
+def update_case_owner(api_url: str, username: str, password: str, case_id: str, email_sagsbehandler: str, ):
     """Opdaterer sagens CaseOwner-felt korrekt med to forskellige digests."""
     session = create_ntlm_session(username, password)
 
@@ -84,11 +103,14 @@ def update_case_owner(api_url: str, username: str, password: str, case_id: str, 
 
     # 2️⃣ Aktindsigt-digest (bruges til feltopdatering)
     akt_digest = get_site_digest(f"{api_url}/aktindsigt", session)
+    
+    listnumber, item_id = get_list_and_id(api_url, case_id, session)
+    # verify_case_item(api_url, session, listnumber, item_id)
 
     # Find bruger
     caseowner_entity = search_sharepoint_user(api_url, session, root_digest, email_sagsbehandler)
     if not caseowner_entity:
-        raise ValueError(f"No SharePoint user found for {email_sagsbehandler}")
+        return False
 
     form_values = [
     {
@@ -102,12 +124,40 @@ def update_case_owner(api_url: str, username: str, password: str, case_id: str, 
         "FieldValue": "Kun sagsbehandlere på sagen",
         "HasException": False,
         "ErrorMessage": None
+    },
+    {
+        "FieldName": "Afdeling",
+        "FieldValue": "HR MTM|14a02c70-50f5-4724-97dd-7f7857930119;",
+        "HasException": False,
+        "ErrorMessage": None
+    },
+    {
+        "FieldName": "KLENummer",
+        "FieldValue": "81.00.00 Kommunens personale i almindelighed|daca4fc2-24d1-4776-99a2-da6d5b8ed553;",
+        "HasException": False,
+        "ErrorMessage": None
+    },
+    {
+        "FieldName": "Facet",
+        "FieldValue": "G01 Generelle sager|5ab851ea-f083-4ceb-9136-ec4a93f3a0e5;",
+        "HasException": False,
+        "ErrorMessage": None
     }
 ]
 
     # Opdater felt
-    result = update_case_field(api_url, session, akt_digest, item_id, form_values)
+    result = update_case_field(api_url, session, akt_digest, form_values, listnumber, item_id)
     return result
+
+def verify_case_item(api_url, session, listnumber, item_id):
+    endpoint = (
+        f"{api_url}/aktindsigt/_api/web/GetList(@a1)/items(@a2)"
+        f"?@a1='%2Faktindsigt%2FLists%2F{listnumber}'&@a2='{item_id}'"
+    )
+    headers = {"Accept": "application/json;odata=verbose"}
+    r = session.get(endpoint, headers=headers)
+    r.raise_for_status()
+
 
 def close_case(case_id, session, go_api_url):
     url = f"{go_api_url}/_goapi/Cases/CloseCase"

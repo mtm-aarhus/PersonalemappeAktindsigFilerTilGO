@@ -299,7 +299,7 @@ def invoke_GenerateAndUploadAktlistePDF(Arguments_GenerateAndUploadAktlistePDF, 
     ows_dict = {
         "Title": PDFAktlisteFilnavn,
         "CaseID": CaseID,
-        "Beskrivelse": "Uploaded af personaleaktbob",
+        "Beskrivelse": "Uploaded af personaleindsigt",
         "Korrespondance": "Udgående",
         "Dato": DokumentlisteDatoString,
         "CCMMustBeOnPostList": "0"}
