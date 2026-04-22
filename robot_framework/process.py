@@ -156,8 +156,8 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     orchestrator_connection.log_info('Making aktliste')
     invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = go_api_url)
     orchestrator_connection.log_info('Setting case owner')
-    
-    send_succes_email(SagsID=SagsID,ModtagerMail=SagsbehandlerMail,Url=CaseUrl,orchestrator_connection=orchestrator_connection,ikke_konverterede_filer=ikke_konverterede_filer)
+    CaseUrlUser = CaseUrl.replace("ad.", "", 1)
+    send_succes_email(SagsID=SagsID,ModtagerMail=SagsbehandlerMail,Url=CaseUrlUser,orchestrator_connection=orchestrator_connection,ikke_konverterede_filer=ikke_konverterede_filer)
     orchestrator_connection.log_info('Logging info to database')
     SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
     DATABASE_NAME = "AktindsigterPersonalemapper"
