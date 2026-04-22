@@ -42,6 +42,7 @@ def send_error_email(to_address: str , caseid):
 
 def process(orchestrator_connection: OrchestratorConnection, queue_element: QueueElement | None = None) -> None:
     specific_content = json.loads(queue_element.data)
+    # specific_content = json.loads(queue_element) #Til test
 
     SharepointSiteUrl = orchestrator_connection.get_constant("AktindsigtPersonalemapperSharepointURL").value
     go_api_url = orchestrator_connection.get_constant("GOApiURL").value
@@ -52,8 +53,6 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     go_username = go_api_login.username
     go_password = go_api_login.password
 
-
-    specific_content = json.loads(queue_element.data)
     orchestrator_connection.log_info('Got constants')
 
     #Definer variable
@@ -82,7 +81,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     orchestrator_connection.log_info('Defining sharepoint stuff')
 
     relative_url = f'/{SharepointSiteUrl.split(".com/")[-1]}/Delte dokumenter/Dokumentlister/{dokumentlisteovermappe}'
-    print(relative_url)
+
 
     downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
     today_date = datetime.now().strftime("%d-%m-%Y")
@@ -99,6 +98,14 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     RelativeSagsUrl = CreatedCase['CaseRelativeUrl']
     CaseUrl = f'{go_api_url}/{RelativeSagsUrl}'
     CaseID = CreatedCase['CaseID']
+
+    #Setting caseworker first so no documents are visible when uploaded
+    update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail )
+    if not update_case_owner:
+        orchestrator_connection.log_error('Bruger kan ikke fremsøges i GO')
+        raise Exception
+    else:
+        print('Caseworker updated succesfully')
     
     #og upload filerne hvis der er nogen
     orchestrator_connection.log_info('Uploader filer')
@@ -149,11 +156,8 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     orchestrator_connection.log_info('Making aktliste')
     invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = go_api_url)
     orchestrator_connection.log_info('Setting case owner')
-    update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail )
-    if not update_case_owner:
-        orchestrator_connection.log_error('Bruger kan ikke fremsøges i GO')
-        raise Exception
-    send_succes_email(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, Url = CaseUrl, orchestrator_connection = orchestrator_connection, ikke_konverterede_filer = ikke_konverterede_filer)
+    
+    send_succes_email(SagsID=SagsID,ModtagerMail=SagsbehandlerMail,Url=CaseUrl,orchestrator_connection=orchestrator_connection,ikke_konverterede_filer=ikke_konverterede_filer)
     orchestrator_connection.log_info('Logging info to database')
     SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
     DATABASE_NAME = "AktindsigterPersonalemapper"

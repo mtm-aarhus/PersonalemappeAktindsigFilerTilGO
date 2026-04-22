@@ -33,8 +33,7 @@ def create_case(go_api_url, SagsTitel, AktID, session):
     }
 
     response = session.post(url, headers=headers, data=payload)
-    print(response.text)
-    print(response.status_code)
+
 
     return response.text
 
@@ -59,58 +58,55 @@ def delete_case_go(go_api_url, session, sagsnummer):
 
        
         
-def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_konverterede_filer ):
+def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_konverterede_filer):
     SMTP_SERVER = "smtp.adm.aarhuskommune.dk"
     SMTP_PORT = 25
     SCREENSHOT_SENDER = "personaleindsigt@aarhus.dk"
-    subject_sagsbehandler = f"Sag nr. {SagsID}: Dokumenterne er overført til GO"
+    UdviklerMail = orchestrator_connection.get_constant('balas').value
+
+    subject = f"Sag nr. {SagsID}: Dokumenterne er overført til GO"
+
+    # Byg den valgfrie filliste-sektion
     if ikke_konverterede_filer:
-        FinalString = "<br>".join(ikke_konverterede_filer)
-        msg = EmailMessage()
-        msg['To'] = ModtagerMail
-        msg['From'] = "personaleindsigt@aarhus.dk"
-        msg['Subject'] = f"{SagsID} - Filer kunne ikke konverteres til PDF"
-        msg.set_content("Please enable HTML to view this message.")
-        html_message = f"""
-            <html>
-                <body>
-                    <p>Upload to GO er nu afsluttet.</p>
-                    <p>Bemærk at følgende filer ikke kunne konverteres til PDF, og skal behandles manuelt: {FinalString} </p>
-                </body>
-            </html>
-            """
-        msg.add_alternative(html_message, subtype='html')
-        with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT) as smtp:
-            smtp.send_message(msg)
-    else:
-
-        html = f"""
-        <html>
-        <body>
-            <p>Dokumenterne, der er angivet som 'Ja' eller 'Delvis' i dokumentlisterne er overført til GO.</p>
-            <p>Du kan se sagen og gennemgå dokumenterne inden udlevering på linket herunder: </p>
-            <a href = "{Url}"> Link til sagen </a> 
-        </body>
-        </html>
+        filer_html = "<br>".join(ikke_konverterede_filer)
+        filliste_sektion = f"""
+            <p style="color: #b91c1c; margin-top: 16px;">
+                <strong>Bemærk:</strong> Følgende filer kunne ikke konverteres til PDF 
+                og skal eventuelt behandles manuelt:
+            </p>
+            <ul>
+                {"".join(f"<li>{fil}</li>" for fil in ikke_konverterede_filer)}
+            </ul>
         """
-        # Create the email message
-        UdviklerMail = orchestrator_connection.get_constant('balas').value
+    else:
+        filliste_sektion = ""
 
-        msg = EmailMessage()
-        msg['To'] = ModtagerMail
-        msg['From'] = SCREENSHOT_SENDER
-        msg['Subject'] = subject_sagsbehandler
-        msg.set_content("Please enable HTML to view this message.")
-        msg.add_alternative(html, subtype='html')
-        msg['Reply-To'] = UdviklerMail
-        msg['Bcc'] = UdviklerMail
-    
-        # Send the email using SMTP
-        try:
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
-                smtp.send_message(msg)
-        except Exception as e:
-            print(e)
+    html = f"""
+    <html>
+    <body>
+        <p>Dokumenterne, der er angivet som 'Ja' eller 'Delvis' i dokumentlisterne 
+        er overført til GO.</p>
+        <p>Du kan se sagen og gennemgå dokumenterne inden udlevering på linket herunder:</p>
+        <a href="{Url}">Link til sagen</a>
+        {filliste_sektion}
+    </body>
+    </html>
+    """
+
+    msg = EmailMessage()
+    msg['To'] = ModtagerMail
+    msg['From'] = SCREENSHOT_SENDER
+    msg['Subject'] = subject
+    msg['Reply-To'] = UdviklerMail
+    msg['Bcc'] = UdviklerMail
+    msg.set_content("Please enable HTML to view this message.")
+    msg.add_alternative(html, subtype='html')
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.send_message(msg)
+    except Exception as e:
+        print(e)
 
 def create_session (Username, PasswordString):
     # Create a session
@@ -320,16 +316,12 @@ def download_file(file_path_without_ext, DokumentID, GOUrl, GoUsername, GoPasswo
         raise nested_exception
 
 def delete_local_file(filsti):
-    """
-    Sletter en lokal fil ud fra stien.
-    Returnerer True hvis slettet, False hvis filen ikke fandtes.
-    """
     try:
         os.remove(filsti)
     except FileNotFoundError:
-        print(f"Filen findes ikke: {filsti}")
+        pass  # filen blev aldrig skrevet til disk — forventet i rute 1 og 2
     except Exception as e:
-        print(f"Fejl ved sletning af {filsti}: {e}")
+        raise Exception(f"Uventet fejl ved sletning af {filsti}: {e}")
 
 def make_payload_document(ows_dict: dict, caseID: str, FolderPath: str, byte_arr: list, filename):
     ows_str = ' '.join([f'ows_{k}="{v}"' for k, v in ows_dict.items()])

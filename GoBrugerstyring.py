@@ -16,7 +16,6 @@ def get_site_digest(site_url: str, session: requests.Session) -> str:
     r = session.post(endpoint, headers={"Accept": "application/json; odata=verbose"})
     r.raise_for_status()
     digest = r.json()["d"]["GetContextWebInformation"]["FormDigestValue"]
-    print(f"Got digest for {site_url}: {digest[:20]}...")
     return digest
 
 def search_sharepoint_user(root_api_url: str, session: requests.Session, digest: str, email: str):
