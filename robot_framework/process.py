@@ -100,8 +100,8 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     CaseID = CreatedCase['CaseID']
 
     #Setting caseworker first so no documents are visible when uploaded
-    update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail )
-    if not update_case_owner:
+    result = update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail )
+    if not result:
         orchestrator_connection.log_error('Bruger kan ikke fremsøges i GO')
         raise Exception
     else:

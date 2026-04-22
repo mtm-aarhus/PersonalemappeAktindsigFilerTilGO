@@ -88,12 +88,15 @@ def update_case_field(api_url: str, session: requests.Session, digest: str, form
         "bNewDocumentUpdate": False,
         "checkInComment": None
     }
-
-    r = session.post(endpoint, headers=headers, data=json.dumps(payload))
-    r.raise_for_status()
-    return r.json()
+    try:
+        r = session.post(endpoint, headers=headers, data=json.dumps(payload))
+        r.raise_for_status()
+        return True
+    except:
+        return False
 
 def update_case_owner(api_url: str, username: str, password: str, case_id: str, email_sagsbehandler: str, ):
+
     """Opdaterer sagens CaseOwner-felt korrekt med to forskellige digests."""
     session = create_ntlm_session(username, password)
 
