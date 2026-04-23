@@ -16,6 +16,9 @@ import time
 import os
 from urllib.parse import unquote, urlparse
 from robot_framework import config
+import uuid
+import xml.etree.ElementTree as ET
+
 
 def create_case(go_api_url, SagsTitel, AktID, session):
     '''
@@ -58,7 +61,7 @@ def delete_case_go(go_api_url, session, sagsnummer):
 
        
         
-def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_konverterede_filer):
+def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_konverterede_filer, fejlede_uploads=None):
     SMTP_SERVER = "smtp.adm.aarhuskommune.dk"
     SMTP_PORT = 25
     SCREENSHOT_SENDER = "personaleindsigt@aarhus.dk"
@@ -66,9 +69,7 @@ def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_k
 
     subject = f"Sag nr. {SagsID}: Dokumenterne er overført til GO"
 
-    # Byg den valgfrie filliste-sektion
     if ikke_konverterede_filer:
-        filer_html = "<br>".join(ikke_konverterede_filer)
         filliste_sektion = f"""
             <p style="color: #b91c1c; margin-top: 16px;">
                 <strong>Bemærk:</strong> Følgende filer kunne ikke konverteres til PDF 
@@ -81,6 +82,19 @@ def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_k
     else:
         filliste_sektion = ""
 
+    if fejlede_uploads:
+        fejl_sektion = f"""
+            <p style="color: #b91c1c; margin-top: 16px;">
+                <strong>Fejl:</strong> Følgende filer kunne ikke uploades til GO og skal 
+                overføres manuelt:
+            </p>
+            <ul>
+                {"".join(f"<li>{fil}</li>" for fil in fejlede_uploads)}
+            </ul>
+        """
+    else:
+        fejl_sektion = ""
+
     html = f"""
     <html>
     <body>
@@ -89,6 +103,7 @@ def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_k
         <p>Du kan se sagen og gennemgå dokumenterne inden udlevering på linket herunder:</p>
         <a href="{Url}">Link til sagen</a>
         {filliste_sektion}
+        {fejl_sektion}
     </body>
     </html>
     """
@@ -158,6 +173,8 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
     DokLinks = []
     aktliste_rows = []
     AktIDer = []
+    UnderMappeNavne = []
+
 
     for sf in subfolders:
         ctx.load(sf)
@@ -231,13 +248,17 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             dokider = filtreret[dokid_kol[0]].dropna().tolist()
             doklinks = filtreret[doklink_kol[0]].dropna().tolist()
             aktider = filtreret[aktid_kol[0]].dropna().tolist()
+            undermappe_navne = [undermappe_navn] * len(titler)
 
             DokumentTitler.extend(titler)
             DokIDer.extend(dokider)
             DokLinks.extend(doklinks)
             AktIDer.extend(aktider)
+            UnderMappeNavne.extend(undermappe_navne)
+            maske_aktliste = df[omfattet_kol[0]].astype(str).str.lower().str.strip().str.contains("ja", na=False)
+            aktliste_filtreret = df[maske_aktliste]
 
-            for _, row in df.iterrows():  # brug hele df, ikke filtreret
+            for _, row in aktliste_filtreret.iterrows():
                 # Konverter altid til streng
                 akt_id_val = "" if not aktid_kol or pd.isna(row.get(aktid_kol[0])) else str(row.get(aktid_kol[0]))
                 dok_id_val = "" if not dokid_kol or pd.isna(row.get(dokid_kol[0])) else str(row.get(dokid_kol[0]))
@@ -268,7 +289,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
         else:
             print("⚠️ Mangler nødvendige kolonner eller tomme.")
 
-    return list(zip(DokumentTitler, DokIDer, DokLinks, AktIDer)), aktliste_rows
+    return list(zip(DokumentTitler, DokIDer, DokLinks, AktIDer, UnderMappeNavne)), aktliste_rows
 
 def download_file(file_path_without_ext, DokumentID, GOUrl, GoUsername, GoPassword):
     try:
@@ -422,3 +443,221 @@ def try_convert_go_file_to_pdf(api_url, DokumentID, session, GoUsername, GoPassw
         if orchestrator_connection:
             orchestrator_connection.log_info(f"{DokumentID} alle download-metoder fejlede: {e}")
         return None, False, titel
+    
+#Below is for uploading large/failed files
+def chunked_file_upload(APIURL, case_url, binary, file_name, session, request_digest, folder_path, orchestrator_connection: OrchestratorConnection):
+    orchestrator_connection.log_info(f'Folder path: {folder_path}')
+    orchestrator_connection.log_info(f'File name: {file_name}')
+    chunk_size_bytes = 1024 * 10240
+    session.headers.update({
+        'X-FORMS_BASED_AUTH_ACCEPTED': 'f',
+        'X-RequestDigest': request_digest
+    })
+    orchestrator_connection.log_info(request_digest)
+
+    web_url = APIURL+"/"+case_url
+    if folder_path is not None:
+        target_folder_url = f"/{case_url}/Dokumenter/{folder_path}".replace("\\", "/")
+    else:
+        target_folder_url = f"/{case_url}/Dokumenter"
+        
+    create_file_request_url = f"{web_url}/_api/web/GetFolderByServerRelativePath(DecodedUrl=@p)/Files/add(url=@f,overwrite=true)?@p='{target_folder_url}'&@f='{file_name}'"
+
+    response = session.post(create_file_request_url)
+    response.raise_for_status()  # Ensure file creation is successful
+
+    target_url = f"{target_folder_url}%2F{file_name}"
+
+    upload_id = str(uuid.uuid4())  # Unique upload session ID
+    offset = 0
+    total_size = len(binary)
+
+    with io.BytesIO(binary) as input_stream:
+        first_chunk = True
+
+        while True:
+            buffer = input_stream.read(chunk_size_bytes)
+            if not buffer:
+                break  # End of file reached
+
+            if first_chunk and len(buffer) == total_size:
+                # If the file fits in a single chunk, handle it differently
+                # StartUpload and FinishUpload in one step
+                endpoint_url = f"{web_url}/_api/web/GetFileByServerRelativePath(DecodedUrl=@u)/startUpload(uploadId=guid'{upload_id}')?@u='{target_url}'"
+                orchestrator_connection.log_info(endpoint_url)
+                response = session.post(endpoint_url, data=buffer)
+                response.raise_for_status()
+
+                endpoint_url =  f"{web_url}/_api/web/GetFileByServerRelativePath(DecodedUrl=@u)/finishUpload(uploadId=guid'{upload_id}',fileOffset={offset})?@u='{target_url}'"
+         
+                orchestrator_connection.log_info(endpoint_url)
+                response = session.post(endpoint_url, data=buffer)
+                response.raise_for_status()
+                break  # Upload complete
+            elif first_chunk:
+                # StartUpload: Initiating the upload session for large files
+                endpoint_url = f"{web_url}/_api/web/GetFileByServerRelativePath(DecodedUrl=@u)/startUpload(uploadId=guid'{upload_id}')?@u='{target_url}'"
+
+                orchestrator_connection.log_info(endpoint_url)
+                response = session.post(endpoint_url, data=buffer)
+                response.raise_for_status()
+                first_chunk = False
+            elif input_stream.tell() == total_size:
+                # FinishUpload: Upload the final chunk for large files
+                endpoint_url = f"{web_url}/_api/web/GetFileByServerRelativePath(DecodedUrl=@u)/finishUpload(uploadId=guid'{upload_id}',fileOffset={offset})?@u='{target_url}'"
+                orchestrator_connection.log_info(endpoint_url)
+                response = session.post(endpoint_url, data=buffer)
+                response.raise_for_status()
+            else:
+                # ContinueUpload: Upload subsequent chunks
+                endpoint_url = f"{web_url}/_api/web/GetFileByServerRelativePath(DecodedUrl=@u)/continueUpload(uploadId=guid'{upload_id}',fileOffset={offset})?@u='{target_url}'"
+                orchestrator_connection.log_info(endpoint_url)
+                response = session.post(endpoint_url, data=buffer)
+                response.raise_for_status()
+
+            offset += len(buffer)
+            chunk_uploaded(offset, total_size, orchestrator_connection)  # Callback for tracking progress
+
+def request_form_digest(APIURL, case_url, session: requests.session):
+    endpoint_url = f"{APIURL}/{case_url}/_api/contextinfo"
+    session.headers.update({
+        'Accept': 'application/json; odata=verbose'
+    })
+    response = session.post(endpoint_url)
+    response.raise_for_status()
+    data = response.json()
+    return data['d']['GetContextWebInformation']['FormDigestValue']
+
+def get_docid(file_name, APIURL, case_url, folder_path, session: requests.session, orchestrator_connection: OrchestratorConnection):
+    orchestrator_connection.log_info(f'Fetching doc_id for {file_name}')
+
+    sags_url = f'{APIURL}/{case_url}/_goapi/Administration/GetLeftMenuCounter'
+
+    # Make the GET request using the session
+    response = session.get(sags_url)
+    response.raise_for_status()
+    data = response.json()
+
+    ViewId = None
+    for item in data:
+        if item.get("ViewName") == "AllItems.aspx" and item.get("ListName") == "Dokumenter":
+            ViewId = item.get("ViewId")
+            break
+
+    if ViewId is None:
+        raise ValueError(f"ViewId for AllItems.aspx not found.")
+
+
+    list_url = f"'/{case_url}/Dokumenter'"
+    if folder_path is None:
+        root_folder = f"/{case_url}/Dokumenter"
+    else:
+        folder_path = folder_path.replace("''", "'")
+        root_folder = f"/{case_url}/Dokumenter/{folder_path}"
+
+    headers = {
+        'content-type': 'application/json;odata=verbose'
+    }
+
+    url = f"{APIURL}/{case_url}/_api/web/GetList(@listUrl)/RenderListDataAsStream?@listUrl={list_url}&View={ViewId}&RootFolder={root_folder}"
+
+    while True:
+        payload_dict = {
+            "parameters": {
+                "__metadata": {
+                    "type": "SP.RenderListDataParameters"
+                },
+                "ViewXml": (
+                    "<View>"
+                    "<Query>"
+                    "<Where>"
+                    "<Eq>"
+                    "<FieldRef Name=\"UniqueId\" />"
+                    f"<Value Type=\"Guid\">{str(uuid.uuid4())}</Value>"
+                    "</Eq>"
+                    "</Where>"
+                    "</Query>"
+                    "<RowLimit Paged=\"TRUE\">100</RowLimit>"
+                    "</View>"
+                )
+            }
+        }
+
+        payload = json.dumps(payload_dict)
+
+        response = session.post(url, headers=headers, data=payload)
+        response.raise_for_status()
+
+        data = response.json()
+
+        for row in data.get('Row', []):
+            if str(row.get('FileLeafRef')).lower() == str(file_name).lower():
+                orchestrator_connection.log_info(f'DocID: {row.get("DocID")}')
+                return row.get('DocID')
+
+        next_href = data.get('NextHref')
+        if next_href:
+            next_href = next_href.replace("?", "&", 1)
+            url = f"{APIURL}/{case_url}/_api/web/GetList(@listUrl)/RenderListDataAsStream?@listUrl={list_url}{next_href}"
+            orchestrator_connection.log_info(f"Fetching next page: {url}")
+        else:
+            orchestrator_connection.log_info("DocID not found.")
+            return None 
+
+# Example usage
+def chunk_uploaded(offset, total_size, orchestrator_connection: OrchestratorConnection):
+    orchestrator_connection.log_info(f"Uploaded {offset} out of {total_size} bytes")
+
+def get_case_type(APIURL, session, case_id):
+    response = session.get(f"{APIURL}/_goapi/Cases/Metadata/{case_id}/False")
+    # Parse the XML data in Metadata
+    metadata = response.json()["Metadata"]
+
+    # Parse the XML string and find the 'row' element
+    root = ET.fromstring(metadata)
+    case_url = root.attrib.get('ows_CaseUrl')
+    return case_url
+
+def update_metadata(APIURL, docid, session, metadata, orchestrator_connection: OrchestratorConnection):
+    # Find the part of the string that contains ows_Dato
+    start_index = metadata.find('ows_Dato="') + len('ows_Dato="')
+    end_index = metadata.find('"', start_index)
+
+    # Extract the date value
+    date_str = metadata[start_index:end_index]
+
+    # Split the date by '-'
+    day, month, year = date_str.split('-')
+
+    # Construct the new date in mm-dd-yyyy format
+    flipped_date = f'{month}-{day}-{year}'
+
+    # Replace the original date with the new one in the metadata string
+    metadata = metadata.replace(date_str, flipped_date)
+
+    payload = {"DocId": docid,
+               "MetadataXml": metadata}
+
+    response = session.post(f'{APIURL}/_goapi/Documents/Metadata', data=payload, timeout=600)
+    response.raise_for_status()
+
+def upload_large_document(APIURL, payload, session, binary, orchestrator_connection: OrchestratorConnection):
+    case_id = payload["CaseId"]
+    folder_path = payload["FolderPath"]
+    file_name = payload["FileName"]
+    file_name2 = file_name
+    metadata = payload["Metadata"]
+    case_url = get_case_type(APIURL, session, case_id)
+    request_digest = request_form_digest(APIURL, case_url, session)
+    file_name = file_name.replace("'", "''")
+    folder_path = folder_path.replace("'", "''")
+
+    chunked_file_upload(APIURL, case_url, binary, file_name, session, request_digest, folder_path, orchestrator_connection)
+    time.sleep(5)
+    docid = get_docid(file_name2, APIURL, case_url, folder_path, session, orchestrator_connection)
+    if docid is not None:
+        update_metadata(APIURL, docid, session, metadata, orchestrator_connection)
+        # Return the success message with DocId
+        return f'{{"DocId":{docid}}}'
+    else:
+        return 'Failed to get DocId'       

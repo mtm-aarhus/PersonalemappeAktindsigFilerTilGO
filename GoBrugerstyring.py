@@ -95,7 +95,7 @@ def update_case_field(api_url: str, session: requests.Session, digest: str, form
     except:
         return False
 
-def update_case_owner(api_url: str, username: str, password: str, case_id: str, email_sagsbehandler: str, ):
+def update_case_owner(api_url: str, username: str, password: str, case_id: str, email_sagsbehandler: str, orchestrator_connection  ):
 
     """Opdaterer sagens CaseOwner-felt korrekt med to forskellige digests."""
     session = create_ntlm_session(username, password)
@@ -113,11 +113,19 @@ def update_case_owner(api_url: str, username: str, password: str, case_id: str, 
     caseowner_entity = search_sharepoint_user(api_url, session, root_digest, email_sagsbehandler)
     if not caseowner_entity:
         return False
+    email_bruger = orchestrator_connection.get_constant('balas').value
+    user_entity = search_sharepoint_user(api_url, session, root_digest, email_bruger)
 
     form_values = [
     {
         "FieldName": "CaseOwner",
         "FieldValue": json.dumps([caseowner_entity]),
+        "HasException": False,
+        "ErrorMessage": None
+    },
+    {
+        "FieldName": "SupplerendeSagsbehandlere",
+        "FieldValue": json.dumps([user_entity]),
         "HasException": False,
         "ErrorMessage": None
     },

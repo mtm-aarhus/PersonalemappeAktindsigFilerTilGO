@@ -100,7 +100,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     CaseID = CreatedCase['CaseID']
 
     #Setting caseworker first so no documents are visible when uploaded
-    result = update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail )
+    result = update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail, orchestrator_connection= orchestrator_connection )
     if not result:
         orchestrator_connection.log_error('Bruger kan ikke fremsøges i GO')
         raise Exception
@@ -110,31 +110,34 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     #og upload filerne hvis der er nogen
     orchestrator_connection.log_info('Uploader filer')
     ikke_konverterede_filer = []  # Tilføj før loopet
+    fejlede_uploads = []
+    created_folders = set()
 
     for file in res:
         orchestrator_connection.log_info('Processing new file')
         FilEndelse = file[2].rsplit('.')[-1]
+        UnderMappeNavn = file[4]
         file_path = f'{downloads_folder}\{file[0]}.{FilEndelse}'
         AktID = file[3]
 
-        # Erstat download_file + read med try_convert_go_file_to_pdf
-        byte_result, is_pdf, ikke_konverteret = try_convert_go_file_to_pdf(go_api_url, file[1], session, go_username, go_password, go_api_url, file_path, orchestrator_connection)
+        byte_result, is_pdf, ikke_konverteret = try_convert_go_file_to_pdf(
+            go_api_url, file[1], session, go_username, go_password, go_api_url, file_path, orchestrator_connection
+        )
 
         if ikke_konverteret:
             ikke_konverterede_filer.append(ikke_konverteret)
 
         if byte_result is None:
             orchestrator_connection.log_info(f"Kunne ikke hente fil {file[0]} - springer over")
+            fejlede_uploads.append(file[0])
             continue
 
-        # Sæt filendelse til pdf hvis konverteret
         if is_pdf:
             FilEndelse = "pdf"
 
         filename = f'{AktID} - {file[0]}.{FilEndelse}'
         byte_arr = list(byte_result)
 
-        # Resten er uændret
         ows_dict = {
             "Title": filename,
             "CaseID": CaseID,
@@ -143,8 +146,48 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
             "Dato": today_date,
             "CCMMustBeOnPostList": "0"
         }
-        payload = make_payload_document(ows_dict=ows_dict, caseID=CaseID, FolderPath="", byte_arr=byte_arr, filename=filename)
-        upload_document_go(go_api_url, payload=payload, session=session)
+        payload = make_payload_document(
+            ows_dict=ows_dict,
+            caseID=CaseID,
+            FolderPath=UnderMappeNavn,
+            byte_arr=byte_arr,
+            filename=filename
+        )
+
+        try:
+            if (len(byte_result) / (1024 * 1024)) > 10:
+                raise Exception("Fil er større end 10 MB, forsøger chunk-upload")
+            response = upload_document_go(go_api_url, payload=payload, session=session)
+            if "DocId" not in response:
+                raise Exception("No DocId i response")
+
+        except Exception as e:
+            orchestrator_connection.log_info(f"Normal upload fejlede for {filename}: {e}")
+            uploaded = False
+            max_retries = 3
+            for attempt in range(1, max_retries + 1):
+                try:
+                    orchestrator_connection.log_info(f"Chunk-upload forsøg {attempt} for {filename}")
+                    if UnderMappeNavn and UnderMappeNavn not in created_folders:
+                        create_and_delete_placeholder(
+                            go_api_url, CaseID, UnderMappeNavn, session, orchestrator_connection
+                        )
+                        created_folders.add(UnderMappeNavn)
+
+                    large_response = upload_large_document(
+                        go_api_url, payload, session, byte_result, orchestrator_connection
+                    )
+                    large_response_json = json.loads(large_response)
+                    if "DocId" not in large_response_json:
+                        raise Exception(f"Ingen DocId i chunk-response for {filename}")
+                    uploaded = True
+                    break
+                except Exception as retry_exception:
+                    orchestrator_connection.log_info(f"Chunk-upload forsøg {attempt} fejlede: {retry_exception}")
+                    if attempt == max_retries:
+                        orchestrator_connection.log_info(f"Alle upload-metoder fejlede for {filename}")
+                        fejlede_uploads.append(filename)
+
         delete_local_file(filsti=file_path)
     args = {
     "in_dt_AktIndex": aktliste_data,
@@ -157,7 +200,7 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = go_api_url)
     orchestrator_connection.log_info('Setting case owner')
     CaseUrlUser = CaseUrl.replace("ad.", "", 1)
-    send_succes_email(SagsID=SagsID,ModtagerMail=SagsbehandlerMail,Url=CaseUrlUser,orchestrator_connection=orchestrator_connection,ikke_konverterede_filer=ikke_konverterede_filer)
+    send_succes_email(SagsID=SagsID,ModtagerMail=SagsbehandlerMail,Url=CaseUrlUser,orchestrator_connection=orchestrator_connection,ikke_konverterede_filer=ikke_konverterede_filer,fejlede_uploads=fejlede_uploads)
     orchestrator_connection.log_info('Logging info to database')
     SQL_SERVER = orchestrator_connection.get_constant('SqlServer').value 
     DATABASE_NAME = "AktindsigterPersonalemapper"
