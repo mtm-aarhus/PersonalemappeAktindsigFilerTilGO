@@ -151,21 +151,27 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
 
     ctx = ClientContext(site_url).with_client_certificate(**cert_credentials)
 
+    orchestrator_connection.log_info(f'Opretter forbindelse til SharePoint: {site_url}')
+    orchestrator_connection.log_info(f'Relative URL: {relative_root_folder_url}')
+
     try:
+        orchestrator_connection.log_info('Henter root-mappe...')
         folder = ctx.web.get_folder_by_server_relative_url(relative_root_folder_url)
         ctx.load(folder)
         ctx.execute_query()
-        print(f"📁 Fundet mappe: {folder.properties['Name']}")
+        orchestrator_connection.log_info(f"Fundet mappe: {folder.properties['Name']}")
     except Exception as e:
-        print("❌ Fejl ved hentning af root-mappe:", e)
+        orchestrator_connection.log_info(f"Fejl ved hentning af root-mappe: {e}")
         return [], []
 
     try:
+        orchestrator_connection.log_info('Henter undermapper...')
         subfolders = folder.folders
         ctx.load(subfolders)
         ctx.execute_query()
+        orchestrator_connection.log_info(f'Undermapper hentet')
     except Exception as e:
-        print("❌ Fejl ved hentning af undermapper:", e)
+        orchestrator_connection.log_info(f"Fejl ved hentning af undermapper: {e}")
         return [], []
 
     DokumentTitler = []
@@ -175,18 +181,24 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
     AktIDer = []
     UnderMappeNavne = []
 
+    subfolders_list = list(subfolders)
+    orchestrator_connection.log_info(f'Antal undermapper fundet: {len(subfolders_list)}')
 
-    for sf in subfolders:
+    for i, sf in enumerate(subfolders_list):
+        orchestrator_connection.log_info(f'Behandler undermappe {i+1}/{len(subfolders_list)}...')
         ctx.load(sf)
         ctx.execute_query()
         undermappe_navn = sf.properties.get("Name", "")
+        orchestrator_connection.log_info(f'Undermappe navn: {undermappe_navn}')
 
         try:
+            orchestrator_connection.log_info(f'Henter filer i {undermappe_navn}...')
             files = sf.files
             ctx.load(files)
             ctx.execute_query()
+            orchestrator_connection.log_info(f'Filer hentet i {undermappe_navn}')
         except Exception as e:
-            print(f"⚠️ Kunne ikke hente filer i {undermappe_navn}:", e)
+            orchestrator_connection.log_info(f"Kunne ikke hente filer i {undermappe_navn}: {e}")
             continue
 
         filer_med_dato = []
@@ -197,13 +209,16 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                 if dato:
                     filer_med_dato.append((dato, fil))
 
+        orchestrator_connection.log_info(f'Excel-filer med dato i {undermappe_navn}: {len(filer_med_dato)}')
         if not filer_med_dato:
             continue
 
         nyeste_fil = max(filer_med_dato, key=lambda x: x[0])[1]
         try:
             server_relative_url = nyeste_fil.properties["ServerRelativeUrl"]
+            orchestrator_connection.log_info(f'Åbner fil: {server_relative_url}')
             response = File.open_binary(ctx, server_relative_url)
+            orchestrator_connection.log_info(f'Fil hentet, læser Excel...')
 
             wb = openpyxl.load_workbook(io.BytesIO(response.content), data_only=True)
             ws = wb.active
@@ -222,7 +237,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                 df[doklink_kol[0]] = links
 
         except Exception as e:
-            print(f"⚠️ Kunne ikke læse Excel-fil: {e}")
+            orchestrator_connection.log_info(f"Kunne ikke læse Excel-fil: {e}")
             continue
 
         aktindsigt_kol = [c for c in df.columns if "Gives der aktindsigt" in c]
@@ -238,6 +253,8 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
         omfattet_kol = [c for c in df.columns if "omfattet" in str(c).lower()]
         aktindsigt_kol = [c for c in df.columns if "gives der aktindsigt" in str(c).lower()]
         begrundelse_kol = [c for c in df.columns if "Begrundelse hvis nej eller delvis" in c]
+
+        orchestrator_connection.log_info(f'Kolonner fundet - aktindsigt: {bool(aktindsigt_kol)}, titel: {bool(dokumenttitel_kol)}, dokid: {bool(dokid_kol)}, doklink: {bool(doklink_kol)}, omfattet: {bool(omfattet_kol)}')
 
         if aktindsigt_kol and dokumenttitel_kol and dokid_kol and doklink_kol:
             kolonne = aktindsigt_kol[0]
@@ -287,8 +304,9 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                 if any(v not in [None, "", float('nan')] for v in row_dict.values()):
                     aktliste_rows.append(row_dict)
         else:
-            print("⚠️ Mangler nødvendige kolonner eller tomme.")
+            orchestrator_connection.log_info(f"Mangler nødvendige kolonner i {undermappe_navn} eller tomme.")
 
+    orchestrator_connection.log_info(f'Dokumentliste færdig. Fandt {len(DokumentTitler)} dokumenter på tværs af alle undermapper.')
     return list(zip(DokumentTitler, DokIDer, DokLinks, AktIDer, UnderMappeNavne)), aktliste_rows
 
 def download_file(file_path_without_ext, DokumentID, GOUrl, GoUsername, GoPassword):
@@ -660,4 +678,4 @@ def upload_large_document(APIURL, payload, session, binary, orchestrator_connect
         # Return the success message with DocId
         return f'{{"DocId":{docid}}}'
     else:
-        return 'Failed to get DocId'       
+        return 'Failed to get DocId'
