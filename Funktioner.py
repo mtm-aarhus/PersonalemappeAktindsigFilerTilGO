@@ -240,6 +240,10 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             orchestrator_connection.log_info(f"Kunne ikke læse Excel-fil: {e}")
             continue
 
+        if df.empty or len(df.columns) == 0:
+            orchestrator_connection.log_info(f'Excel-ark i {undermappe_navn} er tomt - springer over')
+            continue
+
         aktindsigt_kol = [c for c in df.columns if "Gives der aktindsigt" in c]
         dokumenttitel_kol = [c for c in df.columns if "Dokumenttitel" in c]
         dokid_kol = [c for c in df.columns if str(c) == "Dok ID"]
@@ -256,7 +260,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
 
         orchestrator_connection.log_info(f'Kolonner fundet - aktindsigt: {bool(aktindsigt_kol)}, titel: {bool(dokumenttitel_kol)}, dokid: {bool(dokid_kol)}, doklink: {bool(doklink_kol)}, omfattet: {bool(omfattet_kol)}')
 
-        if aktindsigt_kol and dokumenttitel_kol and dokid_kol and doklink_kol:
+        if aktindsigt_kol and dokumenttitel_kol and dokid_kol and doklink_kol and omfattet_kol:
             kolonne = aktindsigt_kol[0]
             maske = df[kolonne].astype(str).str.lower().str.strip().str.contains("ja|delvis", na=False)
             filtreret = df[maske]
