@@ -224,11 +224,31 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                 orchestrator_connection.log_info(f'Fil er tom (0 bytes) - springer over')
                 continue
 
-            wb = openpyxl.load_workbook(io.BytesIO(response.content), data_only=True)
+            orchestrator_connection.log_info(f'Indlæser workbook...')
+            wb = openpyxl.load_workbook(io.BytesIO(response.content), data_only=True, read_only=True)
             ws = wb.active
-            df = pd.read_excel(io.BytesIO(response.content), engine="openpyxl")
+            orchestrator_connection.log_info(f'Workbook indlæst, læser rækker...')
 
-            orchestrator_connection.log_info(f'Excel læst: {len(df)} rækker, {len(df.columns)} kolonner')
+            rows = list(ws.iter_rows(values_only=False))
+            wb.close()
+            orchestrator_connection.log_info(f'Rækker læst: {len(rows)}')
+
+            if len(rows) <= 1:
+                orchestrator_connection.log_info(f'Ark har ingen datarækker - springer over')
+                continue
+
+            headers = [cell.value for cell in rows[0]]
+            data = []
+            links_by_col = {}
+
+            for row in rows[1:]:
+                data.append([cell.value for cell in row])
+                for ci, cell in enumerate(row):
+                    if cell.hyperlink:
+                        links_by_col.setdefault(ci, {})[len(data) - 1] = cell.hyperlink.target
+
+            df = pd.DataFrame(data, columns=headers)
+            orchestrator_connection.log_info(f'DataFrame oprettet: {len(df)} rækker, {len(df.columns)} kolonner')
 
             if df.empty:
                 orchestrator_connection.log_info(f'Ark har ingen datarækker - springer over')
@@ -237,14 +257,9 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             doklink_kol = [c for c in df.columns if str(c) == "Link til dokument"]
             if doklink_kol:
                 kol_index = df.columns.get_loc(doklink_kol[0])
-                links = []
-                for row in ws.iter_rows(min_row=2):
-                    cell = row[kol_index]
-                    if cell.hyperlink:
-                        links.append(cell.hyperlink.target)
-                    else:
-                        links.append(cell.value)
-                df[doklink_kol[0]] = links
+                if kol_index in links_by_col:
+                    for row_i, link in links_by_col[kol_index].items():
+                        df.at[row_i, doklink_kol[0]] = link
 
         except Exception as e:
             orchestrator_connection.log_info(f"Kunne ikke læse Excel-fil: {e}")
