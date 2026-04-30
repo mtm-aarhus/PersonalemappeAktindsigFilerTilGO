@@ -218,11 +218,21 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             server_relative_url = nyeste_fil.properties["ServerRelativeUrl"]
             orchestrator_connection.log_info(f'Åbner fil: {server_relative_url}')
             response = File.open_binary(ctx, server_relative_url)
-            orchestrator_connection.log_info(f'Fil hentet, læser Excel...')
+            orchestrator_connection.log_info(f'Fil hentet ({len(response.content)} bytes), læser Excel...')
+
+            if len(response.content) == 0:
+                orchestrator_connection.log_info(f'Fil er tom (0 bytes) - springer over')
+                continue
 
             wb = openpyxl.load_workbook(io.BytesIO(response.content), data_only=True)
             ws = wb.active
             df = pd.read_excel(io.BytesIO(response.content), engine="openpyxl")
+
+            orchestrator_connection.log_info(f'Excel læst: {len(df)} rækker, {len(df.columns)} kolonner')
+
+            if df.empty:
+                orchestrator_connection.log_info(f'Ark har ingen datarækker - springer over')
+                continue
 
             doklink_kol = [c for c in df.columns if str(c) == "Link til dokument"]
             if doklink_kol:
@@ -238,10 +248,6 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
 
         except Exception as e:
             orchestrator_connection.log_info(f"Kunne ikke læse Excel-fil: {e}")
-            continue
-
-        if df.empty or len(df.columns) == 0:
-            orchestrator_connection.log_info(f'Excel-ark i {undermappe_navn} er tomt - springer over')
             continue
 
         aktindsigt_kol = [c for c in df.columns if "Gives der aktindsigt" in c]
