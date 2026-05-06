@@ -287,7 +287,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                 orchestrator_connection.log_info('Ark har ingen datarækker - springer over')
                 continue
 
-            df = pd.read_excel(tmp_path, engine="openpyxl")
+            df = pd.read_excel(tmp_path, engine="openpyxl", nrows=row_count - 1)
 
             orchestrator_connection.log_info(
                 f'DataFrame oprettet: {len(df)} rækker, {len(df.columns)} kolonner'
