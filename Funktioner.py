@@ -18,7 +18,9 @@ from urllib.parse import unquote, urlparse
 from robot_framework import config
 import uuid
 import xml.etree.ElementTree as ET
-
+SMTP_SERVER = "smtp.adm.aarhuskommune.dk"
+SMTP_PORT = 25
+SCREENSHOT_SENDER = "personaleindsigt@aarhus.dk"
 
 def create_case(go_api_url, SagsTitel, AktID, session):
     '''
@@ -59,12 +61,30 @@ def delete_case_go(go_api_url, session, sagsnummer):
     response.raise_for_status()
     return response.json()
 
-       
-        
+def send_ingen_doko_mail(SagsID, ModtagerMail, orchestrator_connection):
+    mailtekst = f"""
+            <p style="color: #b91c1c; margin-top: 16px;">
+                <strong>Aktliste kan ikke genereres - tjek at dokumentlisterne er udfyldt korrekt.
+            </p>
+        """
+    msg = EmailMessage()
+    msg['To'] = ModtagerMail
+    msg['From'] = SCREENSHOT_SENDER
+    msg['Subject'] = f"Sag nr. {SagsID}: Aktliste kunne ikke oprettes"
+    UdviklerMail = orchestrator_connection.get_constant('balas').value
+    msg['Reply-To'] = UdviklerMail
+    msg['Bcc'] = UdviklerMail
+    msg.set_content("Please enable HTML to view this message.")
+    msg.add_alternative(mailtekst, subtype='html')
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.send_message(msg)
+    except Exception as e:
+        print(e)
+
 def send_succes_email(SagsID, ModtagerMail, Url, orchestrator_connection, ikke_konverterede_filer, fejlede_uploads=None):
-    SMTP_SERVER = "smtp.adm.aarhuskommune.dk"
-    SMTP_PORT = 25
-    SCREENSHOT_SENDER = "personaleindsigt@aarhus.dk"
+   
     UdviklerMail = orchestrator_connection.get_constant('balas').value
 
     subject = f"Sag nr. {SagsID}: Dokumenterne er overført til GO"

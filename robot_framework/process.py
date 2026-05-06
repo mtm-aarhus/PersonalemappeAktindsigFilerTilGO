@@ -198,7 +198,11 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     "in_GoPassword": go_password,
     "in_CaseID": CaseID,}
     orchestrator_connection.log_info('Making aktliste')
-    invoke_GenerateAndUploadAktlistePDF(args,  session = session, gourl = go_api_url)
+    if aktliste_data:
+        invoke_GenerateAndUploadAktlistePDF(args, session=session, gourl=go_api_url)
+    else:
+        orchestrator_connection.log_info('Aktliste er tom - springer generering over')
+        send_ingen_doko_mail(SagsID= SagsID, ModtagerMail= SagsbehandlerMail, orchestrator_connection= orchestrator_connection)
     orchestrator_connection.log_info('Setting case owner')
     CaseUrlUser = CaseUrl.replace("ad.", "", 1)
     send_succes_email(SagsID=SagsID,ModtagerMail=SagsbehandlerMail,Url=CaseUrlUser,orchestrator_connection=orchestrator_connection,ikke_konverterede_filer=ikke_konverterede_filer,fejlede_uploads=fejlede_uploads)
