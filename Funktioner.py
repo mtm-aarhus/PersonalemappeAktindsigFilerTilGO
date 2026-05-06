@@ -18,6 +18,10 @@ from urllib.parse import unquote, urlparse
 from robot_framework import config
 import uuid
 import xml.etree.ElementTree as ET
+import zipfile
+from lxml import etree
+
+
 SMTP_SERVER = "smtp.adm.aarhuskommune.dk"
 SMTP_PORT = 25
 SCREENSHOT_SENDER = "personaleindsigt@aarhus.dk"
@@ -157,8 +161,34 @@ def parse_dato_ddmmåååå(navn):
         except ValueError:
             return None
     return None
-
+def count_excel_rows(path):
+    try:
+        with zipfile.ZipFile(path) as z:
+            with z.open("xl/worksheets/sheet1.xml") as f:
+                row_count = 0
+                for _, elem in etree.iterparse(f, tag="{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"):
+                    row_count += 1
+                    elem.clear()
+                return row_count
+    except Exception:
+        return None
+    
 def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugernavn, kodeord, orchestrator_connection):
+    import zipfile
+    from lxml import etree
+
+    def count_excel_rows(path):
+        try:
+            with zipfile.ZipFile(path) as z:
+                with z.open("xl/worksheets/sheet1.xml") as f:
+                    row_count = 0
+                    for _, elem in etree.iterparse(f, tag="{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"):
+                        row_count += 1
+                        elem.clear()
+                    return row_count
+        except Exception:
+            return None
+
     certification = orchestrator_connection.get_credential("SharePointCert")
     api = orchestrator_connection.get_credential("SharePointAPI")
 
@@ -248,11 +278,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             with open(tmp_path, "wb") as f:
                 f.write(response.content)
 
-            # Tjek rækkeantal FØR pd.read_excel - undgår hæng på filer med kun overskrifter
-            wb_check = openpyxl.load_workbook(tmp_path, read_only=True, data_only=True)
-            ws_check = wb_check.active
-            row_count = ws_check.max_row
-            wb_check.close()
+            row_count = count_excel_rows(tmp_path)
             orchestrator_connection.log_info(f'Rækker i ark (inkl. header): {row_count}')
 
             if row_count is None or row_count <= 1:
@@ -352,6 +378,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
 
     orchestrator_connection.log_info(f'Dokumentliste færdig. Fandt {len(DokumentTitler)} dokumenter på tværs af alle undermapper.')
     return list(zip(DokumentTitler, DokIDer, DokLinks, AktIDer, UnderMappeNavne)), aktliste_rows
+
 
 def download_file(file_path_without_ext, DokumentID, GOUrl, GoUsername, GoPassword):
     try:
