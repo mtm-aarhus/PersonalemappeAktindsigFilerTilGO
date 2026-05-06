@@ -248,11 +248,22 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             with open(tmp_path, "wb") as f:
                 f.write(response.content)
 
+            # Tjek rækkeantal FØR pd.read_excel - undgår hæng på filer med kun overskrifter
+            wb_check = openpyxl.load_workbook(tmp_path, read_only=True, data_only=True)
+            ws_check = wb_check.active
+            row_count = ws_check.max_row
+            wb_check.close()
+            orchestrator_connection.log_info(f'Rækker i ark (inkl. header): {row_count}')
+
+            if row_count is None or row_count <= 1:
+                orchestrator_connection.log_info(f'Ark har ingen datarækker - springer over')
+                continue
+
             df = pd.read_excel(tmp_path, engine="openpyxl")
             orchestrator_connection.log_info(f'DataFrame oprettet: {len(df)} rækker, {len(df.columns)} kolonner')
 
             if df.empty:
-                orchestrator_connection.log_info(f'Ark har ingen datarækker - springer over')
+                orchestrator_connection.log_info(f'Ark er tomt efter parsing - springer over')
                 continue
 
             doklink_kol = [c for c in df.columns if str(c) == "Link til dokument"]
