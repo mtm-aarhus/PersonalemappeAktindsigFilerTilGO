@@ -234,6 +234,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             continue
 
         nyeste_fil = max(filer_med_dato, key=lambda x: x[0])[1]
+        tmp_path = os.path.join(os.path.expanduser("~"), "Downloads", f"_tmp_aktliste_{undermappe_navn}.xlsx")
         try:
             server_relative_url = nyeste_fil.properties["ServerRelativeUrl"]
             orchestrator_connection.log_info(f'Åbner fil: {server_relative_url}')
@@ -244,8 +245,6 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                 orchestrator_connection.log_info(f'Fil er tom (0 bytes) - springer over')
                 continue
 
-            orchestrator_connection.log_info(f'Indlæser workbook...')
-            tmp_path = os.path.join(os.path.expanduser("~"), "Downloads", f"_tmp_aktliste_{i}.xlsx")
             with open(tmp_path, "wb") as f:
                 f.write(response.content)
 
@@ -254,38 +253,33 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
 
             if df.empty:
                 orchestrator_connection.log_info(f'Ark har ingen datarækker - springer over')
-                os.remove(tmp_path)
                 continue
 
-            # Hent hyperlinks separat med read_only=True og max_row begrænsning
             doklink_kol = [c for c in df.columns if str(c) == "Link til dokument"]
-            links_by_col = {}
             if doklink_kol:
                 try:
-                    wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
+                    wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=False, keep_vba=False, keep_links=False)
                     ws = wb.active
                     kol_index = df.columns.get_loc(doklink_kol[0])
                     for ri, row in enumerate(ws.iter_rows(min_row=2, max_row=len(df)+1)):
                         cell = row[kol_index] if kol_index < len(row) else None
                         if cell and cell.hyperlink:
-                            links_by_col[ri] = cell.hyperlink.target
+                            df.at[ri, doklink_kol[0]] = cell.hyperlink.target
                     wb.close()
-                    for row_i, link in links_by_col.items():
-                        df.at[row_i, doklink_kol[0]] = link
                 except Exception as e:
                     orchestrator_connection.log_info(f'Kunne ikke hente hyperlinks: {e}')
-
-            os.remove(tmp_path)
 
         except Exception as e:
             orchestrator_connection.log_info(f"Kunne ikke læse Excel-fil: {e}")
             continue
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
         aktindsigt_kol = [c for c in df.columns if "Gives der aktindsigt" in c]
         dokumenttitel_kol = [c for c in df.columns if "Dokumenttitel" in c]
         dokid_kol = [c for c in df.columns if str(c) == "Dok ID"]
-
-        # Ekstra kolonner til aktliste
+        doklink_kol = [c for c in df.columns if str(c) == "Link til dokument"]
         aktid_kol = [c for c in df.columns if "Akt ID" in c]
         kategori_kol = [c for c in df.columns if "Dokumentkategori" in c]
         dato_kol = [c for c in df.columns if "Dokumentdato" in c]
@@ -296,7 +290,6 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
         begrundelse_kol = [c for c in df.columns if "Begrundelse hvis nej eller delvis" in c]
 
         orchestrator_connection.log_info(f'Kolonner fundet - aktindsigt: {bool(aktindsigt_kol)}, titel: {bool(dokumenttitel_kol)}, dokid: {bool(dokid_kol)}, doklink: {bool(doklink_kol)}, omfattet: {bool(omfattet_kol)}')
-        orchestrator_connection.log_info(f'Alle kolonnenavne: {list(df.columns)}')
 
         if aktindsigt_kol and dokumenttitel_kol and dokid_kol and doklink_kol and omfattet_kol:
             kolonne = aktindsigt_kol[0]
@@ -314,15 +307,14 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             DokLinks.extend(doklinks)
             AktIDer.extend(aktider)
             UnderMappeNavne.extend(undermappe_navne)
+
             maske_aktliste = df[omfattet_kol[0]].astype(str).str.lower().str.strip().str.contains("ja", na=False)
             aktliste_filtreret = df[maske_aktliste]
 
             for _, row in aktliste_filtreret.iterrows():
-                # Konverter altid til streng
                 akt_id_val = "" if not aktid_kol or pd.isna(row.get(aktid_kol[0])) else str(row.get(aktid_kol[0]))
                 dok_id_val = "" if not dokid_kol or pd.isna(row.get(dokid_kol[0])) else str(row.get(dokid_kol[0]))
 
-                # Fjern evt. decimal-del hvis strengen indeholder punktum
                 if "." in akt_id_val:
                     akt_id_val = akt_id_val.split(".")[0]
                 if "." in dok_id_val:
@@ -342,7 +334,6 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                     "Link til dokument": row.get(doklink_kol[0], "") if doklink_kol else ""
                 }
 
-                # Tilføj kun rækken hvis mindst én værdi ikke er tom
                 if any(v not in [None, "", float('nan')] for v in row_dict.values()):
                     aktliste_rows.append(row_dict)
         else:
