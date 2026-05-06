@@ -174,21 +174,6 @@ def count_excel_rows(path):
         return None
     
 def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugernavn, kodeord, orchestrator_connection):
-    import zipfile
-    from lxml import etree
-
-    def count_excel_rows(path):
-        try:
-            with zipfile.ZipFile(path) as z:
-                with z.open("xl/worksheets/sheet1.xml") as f:
-                    row_count = 0
-                    for _, elem in etree.iterparse(f, tag="{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"):
-                        row_count += 1
-                        elem.clear()
-                    return row_count
-        except Exception:
-            return None
-
     certification = orchestrator_connection.get_credential("SharePointCert")
     api = orchestrator_connection.get_credential("SharePointAPI")
 
@@ -219,7 +204,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
         subfolders = folder.folders
         ctx.load(subfolders)
         ctx.execute_query()
-        orchestrator_connection.log_info(f'Undermapper hentet')
+        orchestrator_connection.log_info('Undermapper hentet')
     except Exception as e:
         orchestrator_connection.log_info(f"Fejl ved hentning af undermapper: {e}")
         return [], []
@@ -227,17 +212,19 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
     DokumentTitler = []
     DokIDer = []
     DokLinks = []
-    aktliste_rows = []
     AktIDer = []
     UnderMappeNavne = []
+    aktliste_rows = []
 
     subfolders_list = list(subfolders)
     orchestrator_connection.log_info(f'Antal undermapper fundet: {len(subfolders_list)}')
 
     for i, sf in enumerate(subfolders_list):
-        orchestrator_connection.log_info(f'Behandler undermappe {i+1}/{len(subfolders_list)}...')
+        orchestrator_connection.log_info(f'Behandler undermappe {i + 1}/{len(subfolders_list)}...')
+
         ctx.load(sf)
         ctx.execute_query()
+
         undermappe_navn = sf.properties.get("Name", "")
         orchestrator_connection.log_info(f'Undermappe navn: {undermappe_navn}')
 
@@ -252,91 +239,187 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             continue
 
         filer_med_dato = []
+
         for fil in files:
             filnavn = fil.properties["Name"]
+
             if filnavn.endswith((".xlsx", ".xls")):
                 dato = parse_dato_ddmmåååå(filnavn)
+
                 if dato:
                     filer_med_dato.append((dato, fil))
 
-        orchestrator_connection.log_info(f'Excel-filer med dato i {undermappe_navn}: {len(filer_med_dato)}')
+        orchestrator_connection.log_info(
+            f'Excel-filer med dato i {undermappe_navn}: {len(filer_med_dato)}'
+        )
+
         if not filer_med_dato:
             continue
 
         nyeste_fil = max(filer_med_dato, key=lambda x: x[0])[1]
-        tmp_path = os.path.join(os.path.expanduser("~"), "Downloads", f"_tmp_aktliste_{undermappe_navn}.xlsx")
+        tmp_path = os.path.join(
+            os.path.expanduser("~"),
+            "Downloads",
+            f"_tmp_aktliste_{uuid.uuid4()}.xlsx"
+        )
+
         try:
             server_relative_url = nyeste_fil.properties["ServerRelativeUrl"]
             orchestrator_connection.log_info(f'Åbner fil: {server_relative_url}')
+
             response = File.open_binary(ctx, server_relative_url)
-            orchestrator_connection.log_info(f'Fil hentet ({len(response.content)} bytes), læser Excel...')
+
+            orchestrator_connection.log_info(
+                f'Fil hentet ({len(response.content)} bytes), læser Excel...'
+            )
 
             if len(response.content) == 0:
-                orchestrator_connection.log_info(f'Fil er tom (0 bytes) - springer over')
+                orchestrator_connection.log_info('Fil er tom (0 bytes) - springer over')
                 continue
 
             with open(tmp_path, "wb") as f:
                 f.write(response.content)
 
             row_count = count_excel_rows(tmp_path)
-            orchestrator_connection.log_info(f'Rækker i ark (inkl. header): {row_count}')
+            orchestrator_connection.log_info(f'Rækker i ark inkl. header: {row_count}')
 
             if row_count is None or row_count <= 1:
-                orchestrator_connection.log_info(f'Ark har ingen datarækker - springer over')
+                orchestrator_connection.log_info('Ark har ingen datarækker - springer over')
                 continue
 
             df = pd.read_excel(tmp_path, engine="openpyxl")
-            orchestrator_connection.log_info(f'DataFrame oprettet: {len(df)} rækker, {len(df.columns)} kolonner')
+
+            orchestrator_connection.log_info(
+                f'DataFrame oprettet: {len(df)} rækker, {len(df.columns)} kolonner'
+            )
 
             if df.empty:
-                orchestrator_connection.log_info(f'Ark er tomt efter parsing - springer over')
+                orchestrator_connection.log_info('Ark er tomt efter parsing - springer over')
                 continue
 
-            doklink_kol = [c for c in df.columns if str(c) == "Link til dokument"]
-            if doklink_kol:
-                try:
-                    wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=False, keep_vba=False, keep_links=False)
-                    ws = wb.active
-                    kol_index = df.columns.get_loc(doklink_kol[0])
-                    for ri, row in enumerate(ws.iter_rows(min_row=2, max_row=len(df)+1)):
-                        cell = row[kol_index] if kol_index < len(row) else None
-                        if cell and cell.hyperlink:
-                            df.at[ri, doklink_kol[0]] = cell.hyperlink.target
-                    wb.close()
-                except Exception as e:
-                    orchestrator_connection.log_info(f'Kunne ikke hente hyperlinks: {e}')
+            aktindsigt_kol = [
+                c for c in df.columns
+                if "gives der aktindsigt" in str(c).lower()
+            ]
+            dokumenttitel_kol = [
+                c for c in df.columns
+                if "Dokumenttitel" in str(c)
+            ]
+            dokid_kol = [
+                c for c in df.columns
+                if str(c) == "Dok ID"
+            ]
+            doklink_kol = [
+                c for c in df.columns
+                if str(c) == "Link til dokument"
+            ]
+            aktid_kol = [
+                c for c in df.columns
+                if "Akt ID" in str(c)
+            ]
+            kategori_kol = [
+                c for c in df.columns
+                if "Dokumentkategori" in str(c)
+            ]
+            dato_kol = [
+                c for c in df.columns
+                if "Dokumentdato" in str(c)
+            ]
+            bilagtil_kol = [
+                c for c in df.columns
+                if "Bilag til Dok ID" in str(c)
+            ]
+            bilag_kol = [
+                c for c in df.columns
+                if str(c) == "Bilag"
+            ]
+            omfattet_kol = [
+                c for c in df.columns
+                if "omfattet" in str(c).lower()
+            ]
+            begrundelse_kol = [
+                c for c in df.columns
+                if "Begrundelse hvis nej eller delvis" in str(c)
+            ]
 
-        except Exception as e:
-            orchestrator_connection.log_info(f"Kunne ikke læse Excel-fil: {e}")
-            continue
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            orchestrator_connection.log_info(
+                f'Kolonner fundet - aktindsigt: {bool(aktindsigt_kol)}, '
+                f'titel: {bool(dokumenttitel_kol)}, '
+                f'dokid: {bool(dokid_kol)}, '
+                f'doklink: {bool(doklink_kol)}, '
+                f'omfattet: {bool(omfattet_kol)}'
+            )
 
-        aktindsigt_kol = [c for c in df.columns if "Gives der aktindsigt" in c]
-        dokumenttitel_kol = [c for c in df.columns if "Dokumenttitel" in c]
-        dokid_kol = [c for c in df.columns if str(c) == "Dok ID"]
-        doklink_kol = [c for c in df.columns if str(c) == "Link til dokument"]
-        aktid_kol = [c for c in df.columns if "Akt ID" in c]
-        kategori_kol = [c for c in df.columns if "Dokumentkategori" in c]
-        dato_kol = [c for c in df.columns if "Dokumentdato" in c]
-        bilagtil_kol = [c for c in df.columns if "Bilag til Dok ID" in c]
-        bilag_kol = [c for c in df.columns if str(c) == "Bilag"]
-        omfattet_kol = [c for c in df.columns if "omfattet" in str(c).lower()]
-        aktindsigt_kol = [c for c in df.columns if "gives der aktindsigt" in str(c).lower()]
-        begrundelse_kol = [c for c in df.columns if "Begrundelse hvis nej eller delvis" in c]
+            if not (
+                aktindsigt_kol
+                and dokumenttitel_kol
+                and dokid_kol
+                and doklink_kol
+                and omfattet_kol
+            ):
+                orchestrator_connection.log_info(
+                    f"Mangler nødvendige kolonner i {undermappe_navn} eller tomme."
+                )
+                continue
 
-        orchestrator_connection.log_info(f'Kolonner fundet - aktindsigt: {bool(aktindsigt_kol)}, titel: {bool(dokumenttitel_kol)}, dokid: {bool(dokid_kol)}, doklink: {bool(doklink_kol)}, omfattet: {bool(omfattet_kol)}')
-
-        if aktindsigt_kol and dokumenttitel_kol and dokid_kol and doklink_kol and omfattet_kol:
             kolonne = aktindsigt_kol[0]
-            maske = df[kolonne].astype(str).str.lower().str.strip().str.contains("ja|delvis", na=False)
+
+            maske = (
+                df[kolonne]
+                .astype(str)
+                .str.lower()
+                .str.strip()
+                .str.contains("ja|delvis", na=False)
+            )
+
+            maske_aktliste = (
+                df[omfattet_kol[0]]
+                .astype(str)
+                .str.lower()
+                .str.strip()
+                .str.contains("ja", na=False)
+            )
+
+            if not maske.any() and not maske_aktliste.any():
+                orchestrator_connection.log_info(
+                    f'Ingen relevante rækker i {undermappe_navn} - springer hyperlink-læsning over'
+                )
+                continue
+
+            # Hyperlinks læses først nu, når der faktisk er noget relevant.
+            try:
+                relevante_rækker = maske | maske_aktliste
+
+                wb = openpyxl.load_workbook(
+                    tmp_path,
+                    data_only=True,
+                    read_only=False,
+                    keep_vba=False,
+                    keep_links=False
+                )
+                ws = wb.active
+
+                kol_index = df.columns.get_loc(doklink_kol[0]) + 1
+
+                for df_index in df.index[relevante_rækker]:
+                    excel_row = df_index + 2
+                    cell = ws.cell(row=excel_row, column=kol_index)
+
+                    if cell.hyperlink:
+                        df.at[df_index, doklink_kol[0]] = cell.hyperlink.target
+
+                wb.close()
+
+            except Exception as e:
+                orchestrator_connection.log_info(f'Kunne ikke hente hyperlinks: {e}')
+
             filtreret = df[maske]
 
             titler = filtreret[dokumenttitel_kol[0]].dropna().tolist()
             dokider = filtreret[dokid_kol[0]].dropna().tolist()
             doklinks = filtreret[doklink_kol[0]].dropna().tolist()
-            aktider = filtreret[aktid_kol[0]].dropna().tolist()
+            aktider = filtreret[aktid_kol[0]].dropna().tolist() if aktid_kol else []
+
             undermappe_navne = [undermappe_navn] * len(titler)
 
             DokumentTitler.extend(titler)
@@ -345,7 +428,6 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
             AktIDer.extend(aktider)
             UnderMappeNavne.extend(undermappe_navne)
 
-            maske_aktliste = df[omfattet_kol[0]].astype(str).str.lower().str.strip().str.contains("ja", na=False)
             aktliste_filtreret = df[maske_aktliste]
 
             for _, row in aktliste_filtreret.iterrows():
@@ -354,6 +436,7 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
 
                 if "." in akt_id_val:
                     akt_id_val = akt_id_val.split(".")[0]
+
                 if "." in dok_id_val:
                     dok_id_val = dok_id_val.split(".")[0]
 
@@ -371,12 +454,21 @@ def hent_dokumenttitler_nyeste_filer(site_url, relative_root_folder_url, brugern
                     "Link til dokument": row.get(doklink_kol[0], "") if doklink_kol else ""
                 }
 
-                if any(v not in [None, "", float('nan')] for v in row_dict.values()):
+                if any(str(v).strip() for v in row_dict.values() if not pd.isna(v)):
                     aktliste_rows.append(row_dict)
-        else:
-            orchestrator_connection.log_info(f"Mangler nødvendige kolonner i {undermappe_navn} eller tomme.")
 
-    orchestrator_connection.log_info(f'Dokumentliste færdig. Fandt {len(DokumentTitler)} dokumenter på tværs af alle undermapper.')
+        except Exception as e:
+            orchestrator_connection.log_info(f"Kunne ikke læse Excel-fil: {e}")
+            continue
+
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    orchestrator_connection.log_info(
+        f'Dokumentliste færdig. Fandt {len(DokumentTitler)} dokumenter på tværs af alle undermapper.'
+    )
+
     return list(zip(DokumentTitler, DokIDer, DokLinks, AktIDer, UnderMappeNavne)), aktliste_rows
 
 
