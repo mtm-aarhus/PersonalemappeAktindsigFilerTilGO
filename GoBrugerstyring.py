@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from OpenOrchestrator.orchestrator_connection.connection import OrchestratorConnection
 import os
 import json
+import time
 
 def create_ntlm_session(username: str, password: str) -> requests.Session:
     session = requests.Session()
@@ -62,8 +63,14 @@ def get_list_and_id(api_url, aktid, session, aktnr):
         "Content-Type": "application/json"
     }
     
-    r = session.post(endpoint, headers=headers, json=payload)
-    r.raise_for_status()
+    for attempt in range(5):
+        r = session.post(endpoint, headers=headers, json=payload)
+        if r.status_code == 200 and r.text.strip():
+            break
+        print(f"Tom response - venter 5 sekunder før forsøg {attempt+2}")
+        time.sleep(5)
+    else:
+        raise Exception(f"GO svarede ikke på ModernConfiguration efter 5 forsøg for {aktid}")
     data = r.json()
     caselist = data.get("ModernCase").get("ItemServerUrl").split('/')[-2]
     itemid = data.get("ModernCase").get("ListItemID")
