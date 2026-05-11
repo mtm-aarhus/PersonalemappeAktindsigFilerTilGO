@@ -49,9 +49,9 @@ def search_sharepoint_user(root_api_url: str, session: requests.Session, digest:
             return entity
     return None
 
-def get_list_and_id(api_url, aktid, session):
+def get_list_and_id(api_url, aktid, session, aktnr):
     """Henter liste og itemid til opdatering af bruger i go."""
-    endpoint = f"{api_url}/cases/AKT50/{aktid}/_goapi/Administration/ModernConfiguration"
+    endpoint = f"{api_url}/cases/{aktnr}/{aktid}/_goapi/Administration/ModernConfiguration"
     
     payload = {
         "providerTypes": ["ModernCase", "MoveDocument", "Insight", "SearchSystem", "UserSettings"]
@@ -95,7 +95,7 @@ def update_case_field(api_url: str, session: requests.Session, digest: str, form
     except:
         return False
 
-def update_case_owner(api_url: str, username: str, password: str, case_id: str, email_sagsbehandler: str, orchestrator_connection, email_bruger  ):
+def update_case_owner(api_url: str, username: str, password: str, case_id: str, email_sagsbehandler: str, orchestrator_connection, email_bruger, aktnr  ):
 
     """Opdaterer sagens CaseOwner-felt korrekt med to forskellige digests."""
     session = create_ntlm_session(username, password)
@@ -106,7 +106,7 @@ def update_case_owner(api_url: str, username: str, password: str, case_id: str, 
     # 2️⃣ Aktindsigt-digest (bruges til feltopdatering)
     akt_digest = get_site_digest(f"{api_url}/aktindsigt", session)
     
-    listnumber, item_id = get_list_and_id(api_url, case_id, session)
+    listnumber, item_id = get_list_and_id(api_url, case_id, session, aktnr)
     # verify_case_item(api_url, session, listnumber, item_id)
 
     # Find bruger

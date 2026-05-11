@@ -98,10 +98,11 @@ def process(orchestrator_connection: OrchestratorConnection, queue_element: Queu
     RelativeSagsUrl = CreatedCase['CaseRelativeUrl']
     CaseUrl = f'{go_api_url}/{RelativeSagsUrl}'
     CaseID = CreatedCase['CaseID']
+    aktnr = RelativeSagsUrl.split('/')[-2]
 
     #Setting caseworker first so no documents are visible when uploaded
     mailHR = orchestrator_connection.get_constant('jadt').value #ændres i prod
-    result = update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail, orchestrator_connection= orchestrator_connection, email_bruger= mailHR )
+    result = update_case_owner(api_url= go_api_url, username= go_username, password= go_password, case_id= CaseID, email_sagsbehandler= SagsbehandlerMail, orchestrator_connection= orchestrator_connection, email_bruger= mailHR, aktnr = aktnr )
     if not result:
         orchestrator_connection.log_error('Bruger kan ikke fremsøges i GO')
         raise Exception
