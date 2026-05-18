@@ -124,6 +124,12 @@ def update_case_owner(api_url: str, username: str, password: str, case_id: str, 
 
     form_values = [
     {
+        "FieldName": "Sagsprofil_AKT",
+        "FieldValue": "AAK - Personale Aktindsigtsanmodning - kommunens personale i almindelighed|f7de8565-39ff-4d20-a9e3-1f6578fb2e1d;",
+        "HasException": False,
+        "ErrorMessage": None
+    },
+    {
         "FieldName": "CaseOwner",
         "FieldValue": json.dumps([caseowner_entity]),
         "HasException": False,
